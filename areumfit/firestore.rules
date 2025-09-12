@@ -1,0 +1,127 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 사용자 프로필 보안 규칙
+    match /users/{userId} {
+      // 사용자는 자신의 프로필만 읽고 쓸 수 있음
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // 사용자 메트릭스 보안 규칙
+    match /user_metrics/{userId} {
+      // 사용자는 자신의 메트릭스만 읽고 쓸 수 있음
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // 데이터 유효성 검증
+      allow write: if request.auth != null && 
+                   request.auth.uid == userId &&
+                   isValidMetricsData(request.resource.data);
+    }
+
+    // 운동 세션 보안 규칙
+    match /workout_sessions/{sessionId} {
+      // 사용자는 자신의 세션만 접근 가능
+      allow read, write: if request.auth != null && 
+                         request.auth.uid == resource.data.userId;
+      
+      // 새 세션 생성 시 유효성 검증
+      allow create: if request.auth != null &&
+                    request.auth.uid == request.resource.data.userId &&
+                    isValidWorkoutSession(request.resource.data);
+    }
+
+    // 운동 로그 보안 규칙
+    match /workout_logs/{logId} {
+      // 사용자는 자신의 로그만 접근 가능
+      allow read, write: if request.auth != null && 
+                         request.auth.uid == resource.data.userId;
+      
+      // 새 로그 생성 시 유효성 검증
+      allow create: if request.auth != null &&
+                    request.auth.uid == request.resource.data.userId &&
+                    isValidWorkoutLog(request.resource.data);
+    }
+
+    // 운동 계획 보안 규칙
+    match /workout_plans/{planId} {
+      // 사용자는 자신의 계획만 접근 가능
+      allow read, write: if request.auth != null && 
+                         request.auth.uid == resource.data.userId;
+      
+      // 새 계획 생성 시 유효성 검증
+      allow create: if request.auth != null &&
+                    request.auth.uid == request.resource.data.userId &&
+                    isValidWorkoutPlan(request.resource.data);
+    }
+
+    // 캘린더 이벤트 보안 규칙
+    match /calendar_events/{eventId} {
+      // 사용자는 자신의 이벤트만 접근 가능
+      allow read, write: if request.auth != null && 
+                         request.auth.uid == resource.data.userId;
+    }
+
+    // AI 코치 대화 보안 규칙
+    match /ai_conversations/{conversationId} {
+      // 사용자는 자신의 대화만 접근 가능
+      allow read, write: if request.auth != null && 
+                         request.auth.uid == resource.data.userId;
+      
+      // 대화 기록 보존 기간 제한 (30일)
+      allow read: if request.auth != null && 
+                  request.auth.uid == resource.data.userId &&
+                  resource.data.createdAt > timestamp.date(2024, 1, 1);
+    }
+
+    // 공용 운동 데이터베이스 (읽기 전용)
+    match /exercises/{exerciseId} {
+      // 모든 인증된 사용자가 운동 데이터베이스를 읽을 수 있음
+      allow read: if request.auth != null;
+      // 쓰기는 관리자만 가능 (커스텀 클레임 필요)
+      allow write: if request.auth != null && 
+                   request.auth.token.admin == true;
+    }
+
+    // 기본적으로 모든 문서에 대한 접근 거부
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 유효성 검증 함수들
+    function isValidMetricsData(data) {
+      return data.keys().hasAll(['userId', 'updatedAt']) &&
+             data.userId is string &&
+             data.updatedAt is timestamp;
+    }
+
+    function isValidWorkoutSession(data) {
+      return data.keys().hasAll(['id', 'userId', 'createdAt', 'status']) &&
+             data.id is string &&
+             data.userId is string &&
+             data.createdAt is timestamp &&
+             data.status in ['planned', 'inProgress', 'completed', 'cancelled'];
+    }
+
+    function isValidWorkoutLog(data) {
+      return data.keys().hasAll(['id', 'userId', 'sessionId', 'exerciseKey', 'weight', 'reps']) &&
+             data.id is string &&
+             data.userId is string &&
+             data.sessionId is string &&
+             data.exerciseKey is string &&
+             data.weight is number &&
+             data.reps is number &&
+             data.weight >= 0 &&
+             data.reps > 0;
+    }
+
+    function isValidWorkoutPlan(data) {
+      return data.keys().hasAll(['id', 'userId', 'name', 'createdAt']) &&
+             data.id is string &&
+             data.userId is string &&
+             data.name is string &&
+             data.createdAt is timestamp &&
+             data.name.size() > 0 &&
+             data.name.size() <= 100;
+    }
+  }
+}

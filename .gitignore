@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build outputs  
+build/
+**/build/
+dist/
+**/dist/
+.next/
+
+# Environment
+.env
+.env.local
+
+# Flutter
+.dart_tool/
+.packages
+.pub-cache/
+*.lock
+
+# Logs & temp
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+
+# Backup & practice
+backup/
+*_backup/
+practice*/
+"project */
+archive/
+
+# IDE & OS
+.vscode/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,112 @@
+name: lingumo_desktop_flutter
+description: "Lingumo Desktop - AI-powered language learning desktop app with spaced repetition system"
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # UI and Navigation
+  cupertino_icons: ^1.0.8
+  
+  # HTTP and API Communication
+  http: ^1.1.0
+  dio: ^5.4.0  # Advanced HTTP client with interceptors
+  
+  # Local Storage and Persistence
+  shared_preferences: ^2.5.3
+  sqflite: ^2.3.0  # Local database for offline vocabulary
+  hive: ^2.2.3  # Fast key-value storage for user preferences
+  hive_flutter: ^1.1.0
+  
+  # State Management
+  flutter_riverpod: ^2.4.9
+  
+  # Animations and UI Enhancement
+  lottie: ^3.0.0  # Beautiful animations
+  flutter_staggered_animations: ^1.1.1
+  animations: ^2.0.11
+  
+  # Audio and Speech (commented out for desktop compatibility)
+  # flutter_tts: ^4.0.2  # Text-to-speech for pronunciation - has Windows build issues
+  # audioplayers: ^5.2.1  # Audio playback for lessons
+  
+  # Utilities
+  intl: ^0.19.0  # Internationalization
+  uuid: ^4.3.3  # Generate unique IDs for cards/sessions
+  collection: ^1.18.0  # Enhanced collections
+  
+  # Development Tools
+  logger: ^2.0.2+1  # Better logging
+  
+  # Image and Media
+  cached_network_image: ^3.3.1  # Efficient image caching
+  
+  # Charts and Progress Visualization
+  fl_chart: ^0.66.2  # Beautiful charts for progress tracking
+  
+  # Firebase (commented out for desktop compatibility - has Windows build issues)
+  # firebase_core: ^2.24.2
+  # cloud_firestore: ^4.13.6
+  # firebase_auth: ^4.15.3
+  
+  # File handling
+  file_picker: ^6.1.1
+  
+  # JSON serialization
+  json_annotation: ^4.9.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  
+  # Code generation
+  json_serializable: ^6.7.1
+  build_runner: ^2.4.7
+  hive_generator: ^2.0.1
+
+# For information on the generic Dart part of this file, see the
+# following page: https://dart.dev/tools/pub/pubspec
+
+# The following section is specific to Flutter packages.
+flutter:
+  uses-material-design: true
+
+  # Assets for language learning
+  assets:
+    - assets/images/
+    - assets/animations/
+    - assets/audio/
+    - assets/data/  # For offline vocabulary and lessons
+
+  # An image asset can refer to one or more resolution-specific "variants", see
+  # https://flutter.dev/to/resolution-aware-images
+
+  # For details regarding adding assets from package dependencies, see
+  # https://flutter.dev/to/asset-from-package
+
+  # To add custom fonts to your application, add a fonts section here,
+  # in this "flutter" section. Each entry in this list should have a
+  # "family" key with the font family name, and a "fonts" key with a
+  # list giving the asset and other descriptors for the font. For
+  # example:
+  # fonts:
+  #   - family: Schyler
+  #     fonts:
+  #       - asset: fonts/Schyler-Regular.ttf
+  #       - asset: fonts/Schyler-Italic.ttf
+  #         style: italic
+  #   - family: Trajan Pro
+  #     fonts:
+  #       - asset: fonts/TrajanPro.ttf
+  #       - asset: fonts/TrajanPro_Bold.ttf
+  #         weight: 700
+  #
+  # For details regarding fonts from package dependencies,
+  # see https://flutter.dev/to/font-from-package

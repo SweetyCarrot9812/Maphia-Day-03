@@ -1,0 +1,10 @@
+{
+  "type": "service_account",
+  "project_id": "hanoa-hub-test",
+  "private_key_id": "temp-key-id",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nTEMP_PRIVATE_KEY_FOR_TESTING\n-----END PRIVATE KEY-----\n",
+  "client_email": "firebase-adminsdk@hanoa-hub-test.iam.gserviceaccount.com",
+  "client_id": "temp-client-id",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token"
+}
