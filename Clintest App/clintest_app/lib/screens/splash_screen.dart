@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../services/mongodb_service.dart';
 import '../services/storage_service.dart';
 import '../theme/app_theme.dart';
 import 'onboarding_screen.dart';
@@ -76,28 +75,6 @@ class _SplashScreenState extends State<SplashScreen>
     }
   }
 
-  Future<void> _checkApiConnection() async {
-    try {
-      final mongoService = MongoDBService();
-      // 타임아웃 5초 추가
-      final isConnected = await Future.wait([
-        mongoService.checkConnection(),
-      ]).timeout(
-        const Duration(seconds: 5),
-        onTimeout: () {
-          debugPrint('MongoDB 연결 확인 타임아웃');
-          return [false];
-        },
-      );
-      
-      if (isConnected.first != true) {
-        // MongoDB 연결 실패 시 알림 표시 (optional)
-        debugPrint('MongoDB 서버 연결 실패');
-      }
-    } catch (e) {
-      debugPrint('MongoDB 연결 확인 중 오류: $e');
-    }
-  }
 
   void _navigateToNextScreen() {
     try {

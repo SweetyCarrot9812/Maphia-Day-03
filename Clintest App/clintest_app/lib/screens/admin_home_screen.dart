@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../services/atlas_auth_service.dart';
+import '../services/auth_service.dart';
 import '../services/secure_storage_service.dart';
 import 'login_screen.dart';
 
@@ -243,7 +243,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   }
 
   Future<void> _handleLogout() async {
-    final atlasAuthService = Provider.of<AtlasAuthService>(context, listen: false);
+    final authService = Provider.of<AuthService>(context, listen: false);
     
     final shouldLogout = await showDialog<bool>(
       context: context,
@@ -264,7 +264,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     );
 
     if (shouldLogout == true) {
-      await atlasAuthService.logout();
+      await authService.logout();
       
       if (mounted) {
         Navigator.pushAndRemoveUntil(

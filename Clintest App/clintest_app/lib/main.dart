@@ -6,7 +6,6 @@ import 'firebase_options.dart';
 import 'screens/splash_screen.dart';
 import 'services/api_service.dart';
 import 'services/auth_service.dart';
-import 'services/firebase_auth_service.dart';
 import 'services/storage_service.dart';
 import 'services/database_service.dart';
 import 'services/sample_data_service.dart';
@@ -47,7 +46,6 @@ class ClintestApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthService()),
-        ChangeNotifierProvider(create: (_) => FirebaseAuthService()..initialize()),
         ChangeNotifierProvider(create: (_) => ApiService()),
       ],
       child: MaterialApp(

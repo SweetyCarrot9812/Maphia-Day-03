@@ -61,12 +61,12 @@ class _HomeScreenState extends State<HomeScreen>
         // Desktop API에서 실제 데이터 로드
         _currentUserId = desktop.DesktopIntegrationService.currentUserId;
         
-        // 실제 사용자 통계 가져오기
-        final userStats = await desktop.DesktopIntegrationService.getRealUserStatistics();
-        
-        // 실제 과목별 통계 가져오기
-        final subjectStats = await desktop.DesktopIntegrationService.getRealSubjectStatistics();
-        
+        // 실제 사용자 통계 가져오기 (임시로 StatisticsService 사용)
+        final userStats = await StatisticsService.getUserStatistics(_currentUserId ?? 'temp_user');
+
+        // 실제 과목별 통계 가져오기 (임시로 StatisticsService 사용)
+        final subjectStats = await StatisticsService.getSubjectStatistics(_currentUserId ?? 'temp_user');
+
         setState(() {
           _userStats = userStats;
           _subjectStats = subjectStats;

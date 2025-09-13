@@ -9,12 +9,12 @@ class StatisticsService {
   /// 사용자 전체 통계 데이터
   static Future<UserStatistics> getUserStatistics(String userId) async {
     try {
-      // 우선순위 1: Desktop API에서 실제 통계 가져오기
-      final desktopStats = await DesktopIntegrationService.getRealUserStatistics();
-      if (desktopStats != null) {
-        print('Desktop API에서 실제 사용자 통계 로드됨');
-        return desktopStats;
-      }
+      // 우선순위 1: Desktop API에서 실제 통계 가져오기 (임시 비활성화)
+      // final desktopStats = await DesktopIntegrationService.getRealUserStatistics();
+      // if (desktopStats != null) {
+      //   print('Desktop API에서 실제 사용자 통계 로드됨');
+      //   return desktopStats;
+      // }
       
       // 우선순위 2: 로컬 데이터베이스 통계 (fallback)
       print('Desktop API 실패, 로컬 데이터 사용');
@@ -57,12 +57,12 @@ class StatisticsService {
   /// 과목별 통계 데이터
   static Future<List<SubjectStatistics>> getSubjectStatistics(String userId) async {
     try {
-      // 우선순위 1: Desktop API에서 실제 과목별 통계 가져오기
-      final desktopSubjectStats = await DesktopIntegrationService.getRealSubjectStatistics();
-      if (desktopSubjectStats.isNotEmpty) {
-        print('Desktop API에서 과목별 통계 로드됨: ${desktopSubjectStats.length}개 과목');
-        return desktopSubjectStats;
-      }
+      // 우선순위 1: Desktop API에서 실제 과목별 통계 가져오기 (임시 비활성화)
+      // final desktopSubjectStats = await DesktopIntegrationService.getRealSubjectStatistics();
+      // if (desktopSubjectStats.isNotEmpty) {
+      //   print('Desktop API에서 과목별 통계 로드됨: ${desktopSubjectStats.length}개 과목');
+      //   return desktopSubjectStats;
+      // }
       
       // 우선순위 2: 로컬 데이터베이스 통계 (fallback)
       print('Desktop API 실패, 로컬 과목별 데이터 사용');

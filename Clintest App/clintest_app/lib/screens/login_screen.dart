@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../services/atlas_auth_service.dart';
-import '../services/social_login_service.dart';
+import '../services/auth_service.dart';
 import '../services/storage_service.dart';
 import '../services/secure_storage_service.dart';
 import 'package:provider/provider.dart';
@@ -29,7 +28,13 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isCheckingEmail = false;
   bool _emailExists = false;
   String? _emailCheckMessage;
-  final SocialLoginService _socialLoginService = SocialLoginService();
+  late AuthService _authService;
+
+  @override
+  void initState() {
+    super.initState();
+    _authService = AuthService();
+  }
 
   @override
   void dispose() {
@@ -85,9 +90,9 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
 
-    final atlasAuthService = Provider.of<AtlasAuthService>(context, listen: false);
+    _authService = Provider.of<AuthService>(context, listen: false);
     
-    final success = await atlasAuthService.login(
+    final success = await _authService.login(
       email: _emailController.text.trim(),
       password: _passwordController.text,
     );
@@ -101,7 +106,7 @@ class _LoginScreenState extends State<LoginScreen> {
         _navigateToHome('학생간호사'); // 기본 역할
       }
     } else {
-      _showErrorDialog(atlasAuthService.error ?? '로그인에 실패했습니다');
+      _showErrorDialog(_authService.error ?? '로그인에 실패했습니다');
     }
   }
 
@@ -109,19 +114,33 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _handleRegister() async {
     if (!_formKey.currentState!.validate()) return;
 
-    final atlasAuthService = Provider.of<AtlasAuthService>(context, listen: false);
-    
-    final success = await atlasAuthService.register(
+    _authService = Provider.of<AuthService>(context, listen: false);
+
+    final success = await _authService.register(
       name: _nameController.text.trim(),
       email: _emailController.text.trim(),
       password: _passwordController.text,
-      role: 'student', // 기본 역할
     );
 
     if (success) {
       _navigateToHome('학생간호사'); // 기본 역할
     } else {
-      _showErrorDialog(atlasAuthService.error ?? '회원가입에 실패했습니다');
+      _showErrorDialog(_authService.error ?? '회원가입에 실패했습니다');
+    }
+  }
+
+  // Google 로그인
+  Future<void> _handleGoogleLogin(AuthService authService) async {
+    try {
+      final credential = await authService.signInWithGoogle();
+
+      if (credential != null && credential.user != null) {
+        _navigateToHome('학생간호사'); // 기본 역할
+      } else {
+        // 사용자가 취소한 경우는 에러 메시지 표시하지 않음
+      }
+    } catch (e) {
+      _showErrorDialog(authService.error ?? 'Google 로그인에 실패했습니다');
     }
   }
 
@@ -161,8 +180,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<AtlasAuthService>(
-      builder: (context, atlasAuthService, child) {
+    return Consumer<AuthService>(
+      builder: (context, authService, child) {
         return Scaffold(
           backgroundColor: Colors.white,
           body: SafeArea(
@@ -217,11 +236,23 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   const SizedBox(height: 32),
 
+                  // Google 로그인 버튼
+                  _SocialLoginButton(
+                    icon: Icons.g_mobiledata,
+                    text: 'Google로 계속하기',
+                    onPressed: authService.isLoading ? null : () => _handleGoogleLogin(authService),
+                    backgroundColor: Colors.white,
+                    textColor: Colors.black87,
+                    borderColor: Colors.grey[300],
+                  ),
+
+                  const SizedBox(height: 16),
+
                   // 이메일로 계속하기 버튼
                   _SocialLoginButton(
                     icon: Icons.email,
                     text: '이메일로 계속하기',
-                    onPressed: atlasAuthService.isLoading ? null : () {
+                    onPressed: authService.isLoading ? null : () {
                       setState(() {
                         _isEmailMode = true;
                         _isRegisterMode = false;
@@ -237,7 +268,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   _SocialLoginButton(
                     icon: Icons.arrow_back,
                     text: '뒤로',
-                    onPressed: atlasAuthService.isLoading ? null : () => Navigator.pop(context),
+                    onPressed: authService.isLoading ? null : () => Navigator.pop(context),
                     backgroundColor: Colors.grey[100]!,
                     textColor: Colors.grey[700]!,
                   ),
@@ -374,7 +405,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         const SizedBox(height: 24),
 
                         ElevatedButton(
-                          onPressed: (atlasAuthService.isLoading || (_isRegisterMode && _emailExists))
+                          onPressed: (authService.isLoading || (_isRegisterMode && _emailExists))
                               ? null
                               : (_isRegisterMode ? _handleRegister : _handleLogin),
                           style: ElevatedButton.styleFrom(
@@ -385,7 +416,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               borderRadius: BorderRadius.circular(8),
                             ),
                           ),
-                          child: atlasAuthService.isLoading
+                          child: authService.isLoading
                               ? const SizedBox(
                                   width: 20,
                                   height: 20,
@@ -401,7 +432,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                         // 모드 전환 버튼
                         TextButton(
-                          onPressed: atlasAuthService.isLoading
+                          onPressed: authService.isLoading
                               ? null
                               : () {
                                   setState(() {
@@ -453,6 +484,7 @@ class _SocialLoginButton extends StatelessWidget {
     required this.onPressed,
     required this.backgroundColor,
     required this.textColor,
+    this.borderColor,
   });
 
   @override

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../services/storage_service.dart';
+import '../services/auth_service.dart';
 import '../models/country.dart';
 import '../theme/app_theme.dart';
 
@@ -96,41 +98,281 @@ class _SettingsScreenState extends State<SettingsScreen> {
         foregroundColor: Colors.white,
         // 저장 버튼 제거 - AI 자동화 모드
       ),
-      body: const Center(
-        child: Padding(
-          padding: EdgeInsets.all(32.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.auto_awesome,
-                size: 80,
-                color: AppTheme.primaryColor,
-              ),
-              SizedBox(height: 24),
-              Text(
-                'AI 자동 최적화',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.primaryColor,
+      body: Consumer<AuthService>(
+        builder: (context, authService, child) {
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 로그인 정보 섹션
+                _buildSectionCard(
+                  title: '로그인 정보',
+                  icon: Icons.person,
+                  children: [
+                    _buildUserInfo(authService),
+                  ],
                 ),
-              ),
-              SizedBox(height: 16),
-              Text(
-                'Clintest는 AI 기반으로\n사용자의 학습 패턴을 자동으로 분석하여\n최적화된 학습 환경을 제공합니다.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.grey,
-                  height: 1.5,
+
+                const SizedBox(height: 16),
+
+                // AI 자동 최적화 섹션
+                _buildSectionCard(
+                  title: 'AI 자동 최적화',
+                  icon: Icons.auto_awesome,
+                  children: [
+                    _buildAIAutomationInfo(),
+                  ],
                 ),
-              ),
-            ],
-          ),
-        ),
+              ],
+            ),
+          );
+        },
       ),
     );
+  }
+
+  Widget _buildUserInfo(AuthService authService) {
+    final user = authService.currentUser;
+    final isLoggedIn = authService.isLoggedIn;
+
+    if (!isLoggedIn || user == null) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.orange.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.orange.withOpacity(0.3)),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.warning, color: Colors.orange),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                '로그인이 필요합니다',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.orange,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 프로필 사진 & 기본 정보
+        Row(
+          children: [
+            CircleAvatar(
+              radius: 30,
+              backgroundColor: AppTheme.primaryColor.withOpacity(0.1),
+              backgroundImage: user.photoURL != null
+                ? NetworkImage(user.photoURL!)
+                : null,
+              child: user.photoURL == null
+                ? Icon(
+                    Icons.person,
+                    size: 30,
+                    color: AppTheme.primaryColor,
+                  )
+                : null,
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    user.displayName ?? user.email?.split('@').first ?? '사용자',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    user.email ?? '이메일 없음',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: AppTheme.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 24),
+
+        // 계정 정보
+        _buildInfoRow(
+          icon: Icons.email_outlined,
+          label: '이메일',
+          value: user.email ?? '없음',
+        ),
+
+        _buildInfoRow(
+          icon: Icons.verified_user_outlined,
+          label: '이메일 인증',
+          value: user.emailVerified ? '인증됨' : '미인증',
+          valueColor: user.emailVerified ? Colors.green : Colors.orange,
+        ),
+
+        _buildInfoRow(
+          icon: Icons.access_time,
+          label: '생성일',
+          value: user.metadata.creationTime != null
+            ? _formatDateTime(user.metadata.creationTime!)
+            : '알 수 없음',
+        ),
+
+        _buildInfoRow(
+          icon: Icons.login,
+          label: '마지막 로그인',
+          value: user.metadata.lastSignInTime != null
+            ? _formatDateTime(user.metadata.lastSignInTime!)
+            : '알 수 없음',
+        ),
+
+        _buildInfoRow(
+          icon: Icons.fingerprint,
+          label: '사용자 ID',
+          value: user.uid,
+          isMonospace: true,
+        ),
+
+        const SizedBox(height: 24),
+
+        // 로그아웃 버튼
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: authService.isLoading ? null : () => _handleLogout(authService),
+            icon: authService.isLoading
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.logout),
+            label: Text(authService.isLoading ? '로그아웃 중...' : '로그아웃'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.red,
+              side: const BorderSide(color: Colors.red),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildInfoRow({
+    required IconData icon,
+    required String label,
+    required String value,
+    Color? valueColor,
+    bool isMonospace = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            icon,
+            size: 20,
+            color: AppTheme.primaryColor.withOpacity(0.7),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            flex: 2,
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 14,
+                color: AppTheme.textSecondary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            flex: 3,
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: 14,
+                color: valueColor ?? AppTheme.textPrimary,
+                fontWeight: FontWeight.w500,
+                fontFamily: isMonospace ? 'monospace' : null,
+              ),
+              textAlign: TextAlign.right,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatDateTime(DateTime dateTime) {
+    final now = DateTime.now();
+    final difference = now.difference(dateTime);
+
+    if (difference.inDays > 0) {
+      return '${difference.inDays}일 전';
+    } else if (difference.inHours > 0) {
+      return '${difference.inHours}시간 전';
+    } else if (difference.inMinutes > 0) {
+      return '${difference.inMinutes}분 전';
+    } else {
+      return '방금 전';
+    }
+  }
+
+  Future<void> _handleLogout(AuthService authService) async {
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('로그아웃'),
+        content: const Text('정말 로그아웃하시겠습니까?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('취소'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('로그아웃'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldLogout == true) {
+      final success = await authService.logout();
+
+      if (success && mounted) {
+        // 로그아웃 성공 시 로그인 화면으로 이동
+        Navigator.of(context).pushReplacementNamed('/');
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(authService.error ?? '로그아웃에 실패했습니다'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Widget _buildSectionCard({
