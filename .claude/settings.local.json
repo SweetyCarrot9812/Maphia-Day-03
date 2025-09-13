@@ -725,7 +725,9 @@
       "Bash(where gh)",
       "Bash(gh auth:*)",
       "Bash(git remote remove:*)",
-      "Bash(git submodule:*)"
+      "Bash(git submodule:*)",
+      "Bash(git remote set-url:*)",
+      "Bash(\"C:\\Program Files\\Android\\Android Studio\\jbr\\bin\\keytool\" -list -v -alias androiddebugkey -keystore \"C:\\Users\\tkand\\.android\\debug.keystore\" -storepass android)"
     ],
     "deny": [],
     "ask": [],

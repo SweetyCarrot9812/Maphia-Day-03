@@ -53,12 +53,17 @@ class AuthService extends ChangeNotifier {
           throw UnsupportedError('Google Sign-In is supported on Android/iOS only.');
         }
 
-        // Google Sign-In 7.1.1 새로운 API 사용
-        final googleSignIn = GoogleSignIn.instance;
-        await googleSignIn.initialize();
+        // Google Sign-In 7.1.1 올바른 API 사용
+        final googleSignIn = GoogleSignIn();
 
-        final GoogleSignInAccount gUser = await googleSignIn.authenticate();
-        final GoogleSignInAuthentication gAuth = gUser.authentication;
+        final GoogleSignInAccount? gUser = await googleSignIn.signIn();
+        if (gUser == null) {
+          // 사용자가 로그인을 취소한 경우
+          _setLoading(false);
+          return null;
+        }
+
+        final GoogleSignInAuthentication gAuth = await gUser.authentication;
 
         if (gAuth.idToken == null) {
           throw FirebaseAuthException(
