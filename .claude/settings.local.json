@@ -724,7 +724,8 @@
       "mcp__context7__get-library-docs",
       "Bash(where gh)",
       "Bash(gh auth:*)",
-      "Bash(git remote remove:*)"
+      "Bash(git remote remove:*)",
+      "Bash(git submodule:*)"
     ],
     "deny": [],
     "ask": [],
