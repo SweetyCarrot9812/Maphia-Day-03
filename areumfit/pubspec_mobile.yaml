@@ -1,0 +1,81 @@
+name: areumfit
+description: Personal Health+CrossFit training logger & coach for Hanoa.
+publish_to: "none"
+
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+  flutter: ">=3.24.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  
+  # UI & State Management
+  cupertino_icons: ^1.0.8
+  provider: ^6.1.2
+  
+  # HTTP & API
+  dio: ^5.6.0
+  
+  # Database
+  drift: ^2.18.0
+  drift_sqflite: ^2.0.0
+  sqlite3_flutter_libs: ^0.5.24
+  
+  # Localization & Formatting
+  intl: ^0.20.2
+  
+  # Environment & Configuration
+  flutter_dotenv: ^5.1.0
+  
+  # Notifications & Timer
+  flutter_local_notifications: ^17.2.1
+  timezone: ^0.9.4
+  
+  # File System & Storage
+  path_provider: ^2.1.4
+  path: ^1.9.1
+  
+  # Authentication
+  shared_preferences: ^2.2.3
+  
+  # Firebase (Compatible versions with Isar)
+  firebase_core: ^2.32.0
+  firebase_auth: ^4.20.0
+  cloud_firestore: ^4.17.5
+  google_sign_in: ^6.3.0
+  
+  # JSON & Serialization
+  json_annotation: ^4.9.0
+  freezed_annotation: ^2.4.4
+  
+  # Local Database (Isar)
+  isar: ^3.1.0+1
+  isar_flutter_libs: ^3.1.0+1
+  fl_chart: ^1.1.0
+  crypto: ^3.0.6
+  flutter_riverpod: ^2.6.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  
+  # Code Generation
+  build_runner: ^2.4.11
+  drift_dev: ^2.18.0
+  freezed: ^2.5.2
+  json_serializable: ^6.8.0
+  isar_generator: ^3.1.0+1
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+    - .env
+  
+  generate: true

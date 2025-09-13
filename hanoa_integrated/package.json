@@ -1,0 +1,22 @@
+{
+  "name": "hanoa-integrated",
+  "version": "1.0.0",
+  "description": "Hanoa 통합 플랫폼 - 백엔드 서버 + Flutter 데스크톱 앱",
+  "scripts": {
+    "dev": "concurrently \"npm run backend:dev\" \"npm run frontend:dev\"",
+    "backend:dev": "cd backend && npm run dev",
+    "frontend:dev": "cd frontend && flutter run -d windows",
+    "backend:start": "cd backend && npm start",
+    "frontend:build": "cd frontend && flutter build windows",
+    "build": "npm run frontend:build && npm run backend:start",
+    "install:all": "npm install && cd backend && npm install && cd ../frontend && flutter pub get",
+    "clean": "cd backend && rm -rf node_modules && cd ../frontend && flutter clean",
+    "test": "concurrently \"cd backend && npm test\" \"cd frontend && flutter test\""
+  },
+  "keywords": ["hanoa", "integrated", "flutter", "nodejs", "desktop"],
+  "author": "Hanoa Team",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

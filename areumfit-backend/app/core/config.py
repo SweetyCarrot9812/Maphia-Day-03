@@ -25,9 +25,6 @@ class Settings(BaseSettings):
     OPENAI_TEMPERATURE: float = Field(default=0.7, ge=0.0, le=2.0)
     OPENAI_MAX_TOKENS: int = Field(default=2000, ge=1, le=4096)
 
-    # Database Configuration
-    MONGODB_URL: str = Field(default="mongodb://localhost:27017")
-    DATABASE_NAME: str = Field(default="areumfit")
 
     # Authentication
     JWT_SECRET_KEY: str = Field(default="your-secret-key-change-in-production")
@@ -74,11 +71,6 @@ class Settings(BaseSettings):
 settings = Settings()
 
 
-class DatabaseConfig(BaseModel):
-    """Database configuration"""
-
-    url: str = settings.MONGODB_URL
-    name: str = settings.DATABASE_NAME
 
 
 class AIConfig(BaseModel):
@@ -107,6 +99,5 @@ class ExerciseConfig(BaseModel):
 
 
 # Create configuration instances
-db_config = DatabaseConfig()
 ai_config = AIConfig()
 exercise_config = ExerciseConfig()

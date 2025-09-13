@@ -1,8 +1,8 @@
 ---
 title: "CLAUDE.md"
-date: "2025-09-11"
-version: "5.0"
-description: "Hanoa 패키지형 슈퍼앱 개발 가이드 - 간소화된 버전"
+date: "2025-09-14"
+version: "5.2"
+description: "Hanoa 패키지형 슈퍼앱 개발 가이드 - MongoDB 제거 완료 및 개발환경 최신화"
 ---
 
 # CLAUDE.md
@@ -14,7 +14,7 @@ Hanoa 패키지형 슈퍼앱 개발을 위한 Claude Code 핵심 설정입니다
 **Hanoa**: Firebase Auth + 로컬 우선 아키텍처 기반의 패키지형 교육 슈퍼앱
 
 ### 핵심 구성 요소
-- **areumfit**: 피트니스 앱 (Firebase Auth 통합 완료 ✅)
+- **areumfit**: 피트니스 앱 (Firebase Auth + APK 배포 완료 ✅, GitHub 연동 ✅)
 - **haneul_tone**: 성악 패키지 (Firebase Auth 통합 완료 ✅)
 - **clintest_app**: 의학/간호학 패키지 (Firebase Auth 통합 완료 ✅)
 - **hanoa_flutter_app**: 메인 모바일 앱
@@ -39,7 +39,7 @@ Hanoa 패키지형 슈퍼앱 개발을 위한 Claude Code 핵심 설정입니다
 ## 기술 스택
 
 ### Flutter
-- Flutter 3.9.0+, Riverpod, Isar DB
+- Flutter 3.35.2, Riverpod, Isar DB
 - Firebase Auth 4.20.0, Cloud Firestore 4.17.5
 - google_sign_in 6.3.0
 
@@ -56,19 +56,53 @@ PERPLEXITY_API_KEY=your_key
 - **설정 파일**: lib/firebase_options.dart
 - **SHA-1**: 95:DA:9B:D6:DC:70:B9:93:D8:40:5A:20:19:E5:52:B4:29:DF:34:BF
 
+## 🔧 개발 환경 상태 (2025-09-14 검증)
+
+### 설치 완료 도구들
+- ✅ **Flutter**: 3.35.2 (최신, 완전 기능)
+- ✅ **Dart**: 3.9.0
+- ✅ **Node.js**: 22.18.0
+- ✅ **Git**: 2.50.1.windows.1
+- ✅ **Firebase CLI**: 14.15.2
+- ✅ **Vercel CLI**: 47.1.3
+- ✅ **Python**: 3.12.10 (Microsoft Store 설치)
+- ✅ **Docker Desktop**: 설치됨 (프로세스 실행 중)
+
+### 설치 필요 도구들
+- ❌ **Android Studio**: ADB 포함 (Flutter 모바일 개발용)
+
+### 알려진 이슈
+- **Docker CLI**: PATH 미반영 상태 (터미널 재시작으로 해결)
+- **Python 경로**: `/c/Users/tkand/AppData/Local/Programs/Python/Python312/`
+
+## 🚀 Flutter 개발 환경 최적화
+
+### 개발 모드별 Hot Reload 성능
+- **Desktop (Windows)**: 0.5~1초 ⚡⚡⚡ (최고 성능)
+- **Android Emulator**: 1~2초 ⚡⚡
+- **실제 디바이스**: 1~3초 ⚡⚡
+
+### 권장 개발 워크플로우 (Firebase+Isar 기반)
+1. **초기 개발**: Desktop 모드 (`flutter run -d windows`) - 가장 빠른 Hot Reload
+2. **데이터 작업**: Isar DB(로컬) → Firebase 자동 동기화
+3. **인증**: Firebase Auth (Google Sign-In 지원)
+4. **모바일 최적화**: Emulator 모드 (`flutter run -d emulator-5554`)
+5. **최종 테스트**: 실제 디바이스
+
 ## 개발 명령어
 
 ### 기본 Flutter 작업
 ```bash
 flutter clean && flutter pub get
+flutter run -d windows            # Desktop (개발용 - 가장 빠름)
 flutter run -d emulator-5554      # Android
 flutter run -d chrome             # Web
-flutter run -d windows            # Desktop
 ```
 
 ### Android 빌드 & 배포
 ```bash
 flutter build apk --debug
+flutter analyze                              # 코드 분석
 adb install -r build/app/outputs/flutter-apk/app-debug.apk
 ```
 
@@ -112,7 +146,46 @@ class AuthService extends ChangeNotifier {
 - **UI**: Magic UI 라이브러리
 - **DB**: Isar DB
 
-## 일반적인 문제 해결
+## 빠른 도구 설치 가이드
+
+### Python 3.12
+```bash
+# Microsoft Store 방법 (권장)
+start ms-windows-store://pdp/?ProductId=9NCVDN91XZQP
+```
+
+### Docker Desktop
+```bash
+# 공식 사이트
+start https://docs.docker.com/desktop/setup/install/windows-install/
+```
+
+### Android Studio
+```bash
+# 공식 다운로드
+start https://developer.android.com/studio
+```
+
+**설치 후 확인**:
+```bash
+flutter doctor  # 전체 환경 점검
+```
+
+## 트러블슈팅 가이드
+
+### Docker CLI 접근 안됨
+**증상**: `docker: command not found`
+**해결**: 터미널 재시작 또는 시스템 재부팅
+
+### Python 명령어 안됨
+**증상**: `python: command not found`
+**해결**: 전체 경로 사용
+```bash
+"/c/Users/tkand/AppData/Local/Programs/Python/Python312/python.exe" --version
+```
+
+### PATH 환경변수 문제
+**해결**: Claude Code 완전 재시작 후 재시도
 
 ### Firebase Auth 오류
 ```bash
@@ -151,13 +224,32 @@ flutter clean && flutter pub get
 ## 마이그레이션 완료 기록
 
 ### Electron → Flutter Desktop
-- ✅ Clintest: `Clintest Desktop/` → `clintest_flutter_desktop/`  
+- ✅ Clintest: `Clintest Desktop/` → `clintest_flutter_desktop/`
 - ✅ Lingumo: `english-learning-platform/` → `lingumo_desktop_flutter/`
 
 ### Firebase Auth 통합
 - ✅ 2025-09-11: areumfit, haneul_tone, clintest_app
 - ✅ 슈퍼 어드민 시스템: tkandpf26@gmail.com
 - ✅ 구글 로그인: 모든 통합 앱에서 작동
+
+### 🔄 MongoDB → Firebase+Isar 전환 완료 (2025-09-14)
+
+#### 제거된 구성요소
+- **서비스 파일**: `mongodb_service.dart` (모든 앱에서 제거)
+- **백엔드 설정**: `mongodb_setup.js`, `database.py`, `database.js`
+- **모델 파일**: `mongodb.js`, `User.js`, `Session.js`
+- **의존성**: mongoose, motor, beanie, pymongo
+
+#### 수정된 설정 파일들
+- `package.json` - MongoDB 의존성 제거
+- `requirements.txt` - Python MongoDB 라이브러리 제거
+- `config.py` - MongoDB 환경변수 제거
+- `.env.template` - MongoDB 설정 제거
+
+#### 새로운 데이터 전략
+- **주 저장소**: Isar DB (로컬 우선)
+- **동기화**: Firebase Auth + Firestore
+- **백업**: Firebase 자동 동기화
 
 ## 주의사항
 - Firebase Auth는 동기화용, 주요 데이터는 로컬 우선
@@ -168,3 +260,7 @@ flutter clean && flutter pub get
 ---
 
 *상세 내용은 각 프로젝트별 전용 문서 참조*
+
+## Task Master AI Instructions
+**Import Task Master's development workflow commands and guidelines, treat as if import is in the main CLAUDE.md file.**
+@./.taskmaster/CLAUDE.md
