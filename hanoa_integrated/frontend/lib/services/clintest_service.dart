@@ -9,6 +9,7 @@ class ClintestService extends ChangeNotifier {
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final String _collection = 'clintest_questions';
+  final String _jobCollection = 'analysis_jobs';
 
   List<Question> _questions = [];
   bool _isLoading = false;
@@ -56,6 +57,9 @@ class ClintestService extends ChangeNotifier {
       // 로컬 리스트에 추가
       final newQuestion = question.copyWith(id: docRef.id);
       _questions.add(newQuestion);
+
+      // GPT-5 분석을 위한 job 생성
+      await _createAnalysisJob(docRef.id, newQuestion);
 
       notifyListeners();
       return docRef.id;
@@ -133,6 +137,8 @@ class ClintestService extends ChangeNotifier {
       _setLoading(true);
       _setError(null);
 
+      print('🔍 전체 문제 로딩 시작');
+
       final snapshot = await _firestore
           .collection(_collection)
           .orderBy('createdAt', descending: true)
@@ -142,8 +148,17 @@ class ClintestService extends ChangeNotifier {
           .map((doc) => Question.fromMap(doc.data(), doc.id))
           .toList();
 
+      print('✅ 전체 문제 ${_questions.length}개 로드됨');
+
+      // 디버그: 실제 저장된 모든 subject 값들 확인
+      if (_questions.isNotEmpty) {
+        final subjects = _questions.map((q) => q.subject).toSet();
+        print('📋 데이터베이스의 모든 subject 값들: $subjects');
+      }
+
       notifyListeners();
     } catch (e) {
+      print('❌ 전체 문제 로딩 오류: $e');
       _setError('문제를 불러오는 중 오류가 발생했습니다: $e');
     } finally {
       _setLoading(false);
@@ -156,6 +171,8 @@ class ClintestService extends ChangeNotifier {
       _setLoading(true);
       _setError(null);
 
+      print('🔍 과목별 문제 로딩: $subject');
+
       final snapshot = await _firestore
           .collection(_collection)
           .where('subject', isEqualTo: subject)
@@ -166,8 +183,17 @@ class ClintestService extends ChangeNotifier {
           .map((doc) => Question.fromMap(doc.data(), doc.id))
           .toList();
 
+      print('✅ $subject 문제 ${_questions.length}개 로드됨');
+
+      // 디버그: 실제 저장된 subject 값들 확인
+      if (_questions.isNotEmpty) {
+        final subjects = _questions.map((q) => q.subject).toSet();
+        print('📋 실제 저장된 subject 값들: $subjects');
+      }
+
       notifyListeners();
     } catch (e) {
+      print('❌ 과목별 문제 로딩 오류: $e');
       _setError('문제를 불러오는 중 오류가 발생했습니다: $e');
     } finally {
       _setLoading(false);
@@ -258,5 +284,42 @@ class ClintestService extends ChangeNotifier {
   void clearError() {
     _error = null;
     notifyListeners();
+  }
+
+  /// GPT-5 분석을 위한 job 생성
+  Future<void> _createAnalysisJob(String questionId, Question question) async {
+    try {
+      final jobData = {
+        'type': 'question_analysis',
+        'status': 'pending',
+        'questionId': questionId,
+        'questionData': {
+          'questionText': question.questionText,
+          'choices': question.choices,
+          'correctAnswer': question.correctAnswer,
+          'subject': question.subject,
+          'createdBy': question.createdBy,
+        },
+        'analysisRequests': [
+          'difficulty_assessment', // 난이도 분석
+          'concept_extraction',    // 개념 추출
+          'explanation_generation', // 해설 생성
+          'keyword_tagging',       // 키워드 태그 생성
+          'similar_question_matching' // 유사 문제 매칭
+        ],
+        'aiModel': 'gpt-5',
+        'priority': 'normal',
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+        'results': {},
+        'errors': {},
+      };
+
+      await _firestore.collection(_jobCollection).add(jobData);
+      print('✅ 분석 job 생성 완료: $questionId');
+    } catch (e) {
+      print('❌ 분석 job 생성 실패: $e');
+      // job 생성 실패는 문제 저장을 막지 않음
+    }
   }
 }
