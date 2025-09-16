@@ -21,13 +21,15 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("🚀 Starting AreumFit Backend API Server...")
 
-    # Initialize database connection
-    try:
-        await init_db()
-        logger.info("✅ Database connection established")
-    except Exception as e:
-        logger.error(f"❌ Database connection failed: {e}")
-        raise
+    # Skip database initialization for Vercel (serverless)
+    if not os.getenv("VERCEL"):
+        try:
+            await init_db()
+            logger.info("✅ Database connection established")
+        except Exception as e:
+            logger.error(f"❌ Database connection failed: {e}")
+            # Don't raise for serverless - continue without DB
+            logger.warning("Continuing without database connection...")
 
     yield
 
