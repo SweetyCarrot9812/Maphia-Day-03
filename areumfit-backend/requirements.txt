@@ -15,3 +15,12 @@ pandas==2.2.3
 scikit-learn==1.5.2
 matplotlib==3.9.2
 pillow==10.4.0
+
+# MongoDB dependencies
+motor==3.6.0
+beanie==1.29.0
+pymongo==4.10.1
+
+# Google OAuth dependencies
+google-auth==2.35.0
+google-auth-oauthlib==1.2.1

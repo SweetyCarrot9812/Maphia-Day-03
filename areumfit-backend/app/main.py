@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from contextlib import asynccontextmanager
 import logging
+import os
 
 from app.core.config import settings
 from app.api.v1.api import api_router
@@ -106,6 +107,11 @@ async def health_check():
     }
 
 
+# Vercel handler
+def handler(request):
+    return app
+
+# For local development
 if __name__ == "__main__":
     import uvicorn
 

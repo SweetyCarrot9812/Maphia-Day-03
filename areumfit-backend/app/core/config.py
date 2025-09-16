@@ -31,8 +31,19 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = Field(default="HS256")
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=1440)  # 24 hours
 
+    # MongoDB Configuration
+    MONGODB_URL: str = Field(default="mongodb://localhost:27017", description="MongoDB connection URL")
+    DATABASE_NAME: str = Field(default="areumfit", description="Database name")
+
     # Redis Configuration
     REDIS_URL: str = Field(default="redis://localhost:6379")
+
+    # Google OAuth Configuration
+    GOOGLE_CLIENT_ID: str = Field(default="", description="Google OAuth client ID")
+    GOOGLE_CLIENT_SECRET: str = Field(default="", description="Google OAuth client secret")
+
+    # Email Configuration for password reset
+    EMAIL_RESET_TOKEN_EXPIRE_HOURS: int = Field(default=48)
 
     # Logging
     LOG_LEVEL: str = Field(default="INFO")
