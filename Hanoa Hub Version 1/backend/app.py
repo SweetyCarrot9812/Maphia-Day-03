@@ -891,17 +891,17 @@ def concept_input_form():
 
         tags = st.text_input("태그", help="쉼표로 구분 (선택사항)", key="concept_tags")
 
-        # AI 자동 개념 유사도 검색 개수 결정
+        # 적응형 개념 유사도 검색 개수 결정
         auto_concept_search = st.toggle(
-            "[AI] 개념 검색 개수 자동 결정",
+            "[자동] 개념 검색 개수 적응형 결정",
             value=True,
             key="auto_concept_search",
-            help="Gemini 2.5 Flash가 개념 복잡도에 따라 최적 검색 개수 자동 결정"
+            help="컬렉션 문서 수에 따라 최적 검색 개수 자동 결정 (≤2개: 전체, 3-5개: 최대3개, 6개+: 최대5개)"
         )
 
         if auto_concept_search:
-            st.info("[AI] Gemini 2.5 Flash가 개념 분석 후 최적 검색 개수를 자동 결정합니다")
-            concept_dup_n_results = None  # AI가 나중에 결정
+            st.info("[자동] 컬렉션 문서 수 기반으로 적응형 검색 개수를 결정합니다")
+            concept_dup_n_results = None  # 적응형 로직이 나중에 결정
         else:
             concept_dup_n_results = st.slider(
                 "[MANUAL] 유사 항목 검색 개수",
