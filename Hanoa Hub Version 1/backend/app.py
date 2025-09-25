@@ -1109,12 +1109,12 @@ def concept_input_form():
                                             if os.path.exists(f"temp_concept_{concept_data['id']}.jpg"):
                                                 os.remove(f"temp_concept_{concept_data['id']}.jpg")
 
-                            except Exception as e:
-                                st.error(f"[ERROR] 이미지 처리 실패: {e}")
-                                st.error("[DEBUG] Firebase 서비스 초기화 상태를 확인하세요")
-                                concept_data['hasImage'] = False
-                                concept_data['imageUrl'] = None
-                                concept_data['imageAnalysis'] = None
+                        except Exception as e:
+                            st.error(f"[ERROR] 이미지 처리 실패: {e}")
+                            st.error("[DEBUG] Firebase 서비스 초기화 상태를 확인하세요")
+                            concept_data['hasImage'] = False
+                            concept_data['imageUrl'] = None
+                            concept_data['imageAnalysis'] = None
 
                         # AI 분석 (설명이 있는 경우에만)
                         if concept_data['description']:
@@ -1439,12 +1439,11 @@ def concept_input_form():
                                 st.error(f"[ERROR] Firebase 업로드 실패: {e}")
                                 import traceback
                                 st.error(f"[ERROR] 상세 오류: {traceback.format_exc()}")
+                except Exception as e:
+                    st.error(f"[ERROR] 개념 저장 처리 중 오류: {e}")
             # else:
                 # st.warning("[WARNING] 입력이 없거나 이미지를 업로드해주세요")
 
-
-                    except Exception as e:
-                        st.error(f"[ERROR] 개념 저장 처리 중 오류: {e}")
 
 def ai_generation_tab():
     """AI batch question generation tab"""
