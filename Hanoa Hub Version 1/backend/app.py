@@ -985,25 +985,30 @@ def concept_input_form():
                     except Exception as e:
                         st.error(f"[ERROR] 개념 중복 검사 오류: {e}")
 
-                # 중복이 아닌 경우에만 계속 진행
-                if not is_duplicate:
-                    try:
-                        concept_data = {
-                            'id': str(uuid.uuid4()),
-                            'title': '',  # 나중에 설정
-                            'description': description or '',  # 설명이 없으면 빈 문자열
-                            'tags': [tag.strip() for tag in tags.split(',') if tag.strip()],
-                            'createdAt': datetime.now().isoformat(),
-                            'createdBy': 'streamlit_user',
-                            'hasImage': uploaded_image is not None,
-                            'imageAnalysis': None,
-                            'imageUrl': None
-                        }
+                # 중복이면 조기 종료 (AI 분석 비용 절약)
+                if is_duplicate:
+                    st.error(f"[BLOCKED] 유사도 0.85 이상으로 저장이 차단되었습니다")
+                    st.warning("[INFO] 중복으로 인해 이미지 처리 및 AI 분석을 생략합니다")
+                    return
 
-                        # Process multiple images if uploaded
-                        image_urls = []
-                        if uploaded_images:
-                            try:
+                # 중복이 아니므로 계속 진행
+                try:
+                    concept_data = {
+                        'id': str(uuid.uuid4()),
+                        'title': '',  # 나중에 설정
+                        'description': description or '',  # 설명이 없으면 빈 문자열
+                        'tags': [tag.strip() for tag in tags.split(',') if tag.strip()],
+                        'createdAt': datetime.now().isoformat(),
+                        'createdBy': 'streamlit_user',
+                        'hasImage': uploaded_image is not None,
+                        'imageAnalysis': None,
+                        'imageUrl': None
+                    }
+
+                    # Process multiple images if uploaded
+                    image_urls = []
+                    if uploaded_images:
+                        try:
                                 # Upload all images to Firebase Storage
                                 with st.spinner(f"[UPLOAD] {len(uploaded_images)}개 이미지를 Firebase Storage에 업로드 중..."):
                                     for idx, img in enumerate(uploaded_images):
