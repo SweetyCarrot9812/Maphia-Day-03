@@ -25,7 +25,23 @@ from api_usage_tracker import api_tracker
 from services.firebase_service import firebase_service
 from services.gemini_service import gemini_service
 from analyzers.image_hierarchical_analyzer import ImageHierarchicalAnalyzer
+# 기본 중복 제거 엔진 먼저 임포트
 from deduplication_engine import deduplication_engine
+
+# 고급 기능들을 안전하게 임포트
+try:
+    from deduplication_engine import use_advanced_deduplication, ADVANCED_DEDUP_AVAILABLE
+    print("[SUCCESS] 고급 중복 제거 기능 임포트 성공")
+except ImportError as e:
+    print(f"[WARNING] 고급 중복 제거 임포트 실패, 기본 엔진 사용: {e}")
+    # 폴백 함수 정의
+    def use_advanced_deduplication(documents, domain='medical', **kwargs):
+        return deduplication_engine.deduplicate(
+            documents,
+            domain=domain,
+            return_pairs=kwargs.get('return_pairs', True)
+        )
+    ADVANCED_DEDUP_AVAILABLE = False
 from PIL import Image
 import io
 import os
@@ -38,7 +54,7 @@ from question_types import QuestionType
 # Page configuration
 st.set_page_config(
     page_title="Hanoa RAG System",
-    page_icon="📚",
+    page_icon="[BOOK]",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -56,7 +72,7 @@ def main():
             st.stop()
 
     # Header
-    st.title("📚 Hanoa RAG System")
+    st.title("[BOOK] Hanoa RAG System")
     st.markdown("간호학/의학 문제 및 개념 관리 시스템")
 
     # Sidebar - System Status
@@ -127,34 +143,78 @@ def question_input_form():
     # 분야 선택 (간호/의학)
     field = st.selectbox("분야 선택 *", ["간호", "의학"])
 
+
     with st.form("question_form"):
-        # Image upload section
+        # Image upload section with multiple files support
         st.subheader("[IMAGE] 이미지 업로드 (선택사항)")
-        uploaded_image = st.file_uploader(
-            "문제 관련 이미지",
+
+        # Multiple file uploader
+        uploaded_images = st.file_uploader(
+            "문제 관련 이미지 (여러 개 선택 가능)",
             type=['png', 'jpg', 'jpeg', 'webp'],
-            help="문제와 관련된 의료 이미지를 업로드하세요 (PNG, JPG, JPEG, WebP 지원)"
+            accept_multiple_files=True,
+            help="문제와 관련된 의료 이미지를 업로드하세요. 여러 개 선택 가능 (PNG, JPG, JPEG, WebP 지원)"
         )
 
-        image_analysis_result = None
-        if uploaded_image is not None:
-            # Display uploaded image
-            col_img1, col_img2 = st.columns([1, 2])
-            with col_img1:
-                st.image(uploaded_image, caption="업로드된 이미지", width=200)
+        # Clipboard paste support
+        st.markdown("#### [PASTE] 클립보드 이미지 URL 붙여넣기")
+        clipboard_urls = st.text_area(
+            "이미지 URL을 붙여넣으세요 (한 줄에 하나씩)",
+            height=100,
+            placeholder="예시:\nhttps://example.com/image1.jpg\nhttps://example.com/image2.jpg",
+            key="question_clipboard_urls"
+        )
 
-            with col_img2:
-                analyze_on_save = st.checkbox("[ANALYSIS] 이미지 자동 분석", value=True, key="question_analyze_image")
-                if analyze_on_save:
-                    st.info("[INFO] 이미지가 저장 시 자동 분석됩니다")
+        # Image display options
+        display_with_problem = st.checkbox(
+            "[DISPLAY] 문제와 함께 이미지 표시",
+            value=True,
+            help="체크하면 문제를 표시할 때 이미지도 함께 보입니다"
+        )
+
+        # Process uploaded images
+        image_analysis_result = None
+        uploaded_image = uploaded_images[0] if uploaded_images else None
+
+        # Display all images
+        if uploaded_images:
+            st.write(f"[INFO] {len(uploaded_images)}개 이미지 업로드됨")
+            cols = st.columns(min(len(uploaded_images), 3))
+            for idx, img in enumerate(uploaded_images[:3]):
+                with cols[idx % 3]:
+                    st.image(img, caption=f"이미지 {idx+1}", width=150)
+
+            if len(uploaded_images) > 3:
+                st.info(f"[INFO] 추가 {len(uploaded_images)-3}개 이미지가 더 있습니다")
+
+            analyze_on_save = st.checkbox(
+                "[ANALYSIS] 모든 이미지 자동 분석",
+                value=True,
+                key="question_analyze_images"
+            )
+            if analyze_on_save:
+                st.info(f"[INFO] {len(uploaded_images)}개 이미지가 저장 시 자동 분석됩니다")
+        elif clipboard_urls:
+            url_list = [url.strip() for url in clipboard_urls.split('\n') if url.strip()]
+            if url_list:
+                st.write(f"[INFO] {len(url_list)}개 URL 입력됨")
+                analyze_on_save = st.checkbox("[ANALYSIS] URL 이미지 연결", value=True, key="question_url_images")
+        else:
+            analyze_on_save = False
 
         st.divider()
 
         col1, col2 = st.columns([2, 1])
 
         with col1:
-            question_text = st.text_area("문제", height=100, help="간호 문제를 입력하세요")
-            explanation = st.text_area("해설", height=80, help="정답 해설을 입력하세요")
+            # Initialize session state for text fields if not exists
+            if 'question_text' not in st.session_state:
+                st.session_state.question_text = ""
+            if 'question_explanation' not in st.session_state:
+                st.session_state.question_explanation = ""
+
+            question_text = st.text_area("문제", height=100, help="간호 문제를 입력하세요", key="question_text")
+            explanation = st.text_area("해설", height=80, help="정답 해설을 입력하세요", key="question_explanation")
 
         with col2:
             # 분야에 따라 과목 목록 변경
@@ -168,7 +228,11 @@ def question_input_form():
                     "해부학", "생리학", "병리학", "약리학",
                     "내과학", "외과학", "소아과학", "산부인과학", "정신의학"
                 ])
-            tags = st.text_input("태그", help="쉼표로 구분 (선택사항)")
+            # Initialize session state for tags
+            if 'question_tags' not in st.session_state:
+                st.session_state.question_tags = ""
+
+            tags = st.text_input("태그", help="쉼표로 구분 (선택사항)", key="question_tags")
 
         # Choices
         st.subheader("선택지 (필수 5개)")
@@ -184,6 +248,25 @@ def question_input_form():
         st.subheader("정답 선택")
         answer_options = ["1번", "2번", "3번", "4번", "5번"]
         correct_answer_number = st.selectbox("정답", answer_options)
+
+        # AI 자동 유사도 검색 개수 결정
+        auto_search_count = st.toggle(
+            "[AI] 유사도 검색 개수 자동 결정",
+            value=True,
+            help="Gemini 2.5 Flash가 텍스트 복잡도에 따라 최적 검색 개수 자동 결정"
+        )
+
+        if auto_search_count:
+            st.info("[AI] Gemini 2.5 Flash가 텍스트 분석 후 최적 검색 개수를 자동 결정합니다")
+            dup_n_results = None  # AI가 나중에 결정
+        else:
+            dup_n_results = st.slider(
+                "[MANUAL] 유사 항목 검색 개수",
+                min_value=1,
+                max_value=5,
+                value=3,
+                help="중복 검사 시 검색할 상위 결과 수 (수동 설정)"
+            )
 
         # Get the actual answer based on selection
         if correct_answer_number:
@@ -208,6 +291,51 @@ def question_input_form():
                         # 문제 중복 체크를 위해 ChromaDB에서 검색
                         from rag_engine_multi_domain import multi_domain_rag_engine
 
+                        # AI 자동 검색 개수 결정 (auto_search_count가 True인 경우)
+                        if dup_n_results is None:  # AI 자동 결정 모드
+                            # Gemini 2.5 Flash로 텍스트 복잡도 분석
+                            try:
+                                if ADVANCED_DEDUP_AVAILABLE:
+                                    from advanced_dedup.genre_classifier import medical_genre_classifier
+                                    # 텍스트 길이와 복잡도에 따라 자동 결정
+                                    text_length = len(question_text) if question_text else 0
+                                    # 기본값으로 choice_count 설정 (폼에서 선택지는 항상 5개)
+                                    choice_count = 5  # 문제 형식상 항상 5개 선택지
+                                    explanation_length = len(explanation) if explanation else 0
+
+                                    # AI 기반 복잡도 점수 (0.0 ~ 1.0)
+                                    complexity_prompt = f"다음 의료 문제의 복잡도를 0.0~1.0으로 평가하세요. 텍스트 길이, 선택지 수, 전문성을 고려하여 점수만 반환하세요.\n\n문제: {question_text[:200]}\n선택지 수: {choice_count}\n해설 길이: {explanation_length}"
+
+                                    try:
+                                        complexity_response = medical_genre_classifier.gemini_client.generate_content(complexity_prompt)
+                                        complexity_score = float(complexity_response.text.strip())
+                                        complexity_score = max(0.0, min(1.0, complexity_score))  # 0.0~1.0 범위로 제한
+                                    except:
+                                        # AI 실패시 휴리스틱 방식
+                                        complexity_score = min(1.0, (text_length / 500 + choice_count / 10 + explanation_length / 300) / 3)
+
+                                    # 복잡도에 따른 검색 개수 자동 결정
+                                    if complexity_score < 0.3:
+                                        auto_dup_n_results = 2  # 단순한 문제
+                                    elif complexity_score < 0.6:
+                                        auto_dup_n_results = 3  # 보통 복잡도
+                                    elif complexity_score < 0.8:
+                                        auto_dup_n_results = 4  # 복잡한 문제
+                                    else:
+                                        auto_dup_n_results = 5  # 매우 복잡한 문제
+
+                                    st.info(f"[AI] 복잡도 분석: {complexity_score:.2f} → 검색 개수: {auto_dup_n_results}개")
+                                else:
+                                    # 고급 엔진 없으면 휴리스틱 방식
+                                    text_complexity = min(5, max(2, len(question_text) // 100 + choice_count))
+                                    auto_dup_n_results = text_complexity
+                                    st.info(f"[FALLBACK] 텍스트 기반 자동 결정: {auto_dup_n_results}개")
+                            except Exception as e:
+                                st.warning(f"[WARNING] AI 자동 결정 실패, 기본값 사용: {e}")
+                                auto_dup_n_results = 3
+                        else:
+                            auto_dup_n_results = dup_n_results
+
                         # 문제 텍스트로 유사한 문제 검색
                         if field == "간호":
                             collection_name = 'nursing_questions'
@@ -215,14 +343,39 @@ def question_input_form():
                             collection_name = 'medical_problems'
 
                         try:
-                            collection = multi_domain_rag_engine.chroma_client.get_collection(collection_name)
+                            collection = multi_domain_rag_engine.chroma_client.get_or_create_collection(collection_name)
 
                             # 정확히 같은 문제 텍스트가 있는지 확인
                             results = collection.query(
                                 query_texts=[question_text],
-                                n_results=1,
+                                n_results=auto_dup_n_results,
                                 where={"type": "problem"}
                             )
+
+                            # 검색 결과가 없더라도 [GENRE]/[SIMILARITY] 표시는 항상 수행
+                            has_docs = bool(results.get('documents') and results['documents'][0])
+                            if not has_docs:
+                                if ADVANCED_DEDUP_AVAILABLE:
+                                    from advanced_dedup.genre_classifier import medical_genre_classifier
+                                    _g, _conf = medical_genre_classifier.classify_text(question_text)
+                                    with st.expander("[GENRE] 장르 분류 결과", expanded=True):
+                                        st.write(f"**장르**: {_g.value}")
+                                        st.write(f"**신뢰도**: {_conf:.3f}")
+                                        st.info("[INFO] 비교 대상이 없어 유사도 분석은 표시만 진행")
+                                else:
+                                    from deduplication_engine import deduplication_engine as _simple_engine
+                                    _tl = (question_text or "").lower()
+                                    _scores = {g: sum(1 for kw in kws if kw.lower() in _tl) for g, kws in _simple_engine.genres.items()}
+                                    _bg = max(_scores, key=_scores.get) if _scores else 'medical'
+                                    _tot = sum(_scores.values()) or 1
+                                    _cf = (_scores.get(_bg, 0) / _tot)
+                                    with st.expander("[GENRE] 장르 분류 결과", expanded=True):
+                                        st.write(f"**장르**: {_bg}")
+                                        st.write(f"**신뢰도**: {_cf:.3f}")
+                                        st.info("[FALLBACK] 키워드 기반 분류")
+
+                                with st.expander("[SIMILARITY] 유사도 분석 결과", expanded=True):
+                                    st.write("유사 항목 없음 (비교 대상 부족 또는 최초 저장)")
 
                             # 고급 중복 제거 파이프라인 사용
                             if results['documents'] and results['documents'][0]:
@@ -236,37 +389,117 @@ def question_input_form():
                                             'meta': results['metadatas'][0][i] if results['metadatas'] and results['metadatas'][0] else {}
                                         })
 
-                                # 현재 문제도 문서로 추가
-                                existing_docs.append({
-                                    'id': 'new_question',
-                                    'text': question_text,
-                                    'meta': {'type': 'new'}
-                                })
+                                # 고급 중복 제거 엔진 사용 (가능한 경우)
+                                if ADVANCED_DEDUP_AVAILABLE:
+                                    st.info("[INFO] 고급 중복 제거 엔진 사용 중 (장르 분류 + 동적 임계값 + Cross-Encoder)")
+                                    print(f"[DEBUG] 고급 엔진 호출 - 기존 문서 수: {len(existing_docs)}")
+                                    st.info(f"[DEBUG] 기존 문제 {len(existing_docs)}개와 비교 중...")
 
-                                # 의료 도메인으로 중복 제거 실행
-                                unique_ids, duplicate_pairs = deduplication_engine.deduplicate(
-                                    existing_docs,
-                                    domain='medical',
-                                    return_pairs=True
-                                )
+                                    # 장르 분류 먼저 표시
+                                    from advanced_dedup.genre_classifier import medical_genre_classifier
+                                    genre, genre_confidence = medical_genre_classifier.classify_text(question_text)
+                                    with st.expander("[GENRE] 장르 분류 결과", expanded=True):
+                                        st.write(f"**장르**: {genre.value}")
+                                        st.write(f"**신뢰도**: {genre_confidence:.3f}")
+                                        if genre_confidence > 0.5:
+                                            st.success(f"[AI] Gemini 2.5 Flash 분류 사용")
+                                        else:
+                                            st.info(f"[FALLBACK] 키워드 기반 분류 사용")
+
+                                    # 새 문제를 포함한 전체 문서로 중복 검사
+                                    all_docs = existing_docs + [{
+                                        'id': 'new_question',
+                                        'text': question_text,
+                                        'domain': 'medical',
+                                        'type': 'problem'
+                                    }]
+
+                                    unique_ids, duplicate_pairs = use_advanced_deduplication(
+                                        all_docs,
+                                        domain='medical',
+                                        return_pairs=True,
+                                        apply_mmr=False,  # 문제 저장 시에는 MMR 비활성화
+                                        target_diversity_ratio=0.8
+                                    )
+                                    print(f"[DEBUG] 고급 엔진 결과 - 중복 쌍: {len(duplicate_pairs) if duplicate_pairs else 0}개")
+                                else:
+                                    # 기존 방식 폴백
+                                    # [GENRE] 폴백 분류 표시 (고급 엔진 미사용 시)
+                                    from deduplication_engine import deduplication_engine as _simple_engine
+                                    _tl = (question_text or "").lower()
+                                    _scores = {g: sum(1 for kw in kws if kw.lower() in _tl) for g, kws in _simple_engine.genres.items()}
+                                    _bg = max(_scores, key=_scores.get) if _scores else 'medical'
+                                    _tot = sum(_scores.values()) or 1
+                                    _cf = (_scores.get(_bg, 0) / _tot)
+                                    with st.expander("[GENRE] 장르 분류 결과", expanded=True):
+                                        st.write(f"**장르**: {_bg}")
+                                        st.write(f"**신뢰도**: {_cf:.3f}")
+                                        st.info("[FALLBACK] 키워드 기반 분류")
+                                    unique_ids, duplicate_pairs = deduplication_engine.deduplicate(
+                                        existing_docs + [{'id': 'new_question', 'text': question_text, 'domain': 'medical', 'type': 'problem'}],
+                                        domain='medical',
+                                        return_pairs=True
+                                    )
 
                                 # new_question이 중복으로 판정되었는지 확인
                                 is_duplicate = False
+                                max_similarity = 0.0
+                                similar_text = ""
+
+                                print(f"[DEBUG] 중복 체크 시작 - 기존 문서 개수: {len(existing_docs)}")
+                                print(f"[DEBUG] 새 문제 텍스트: {question_text[:50]}...")
+
+                                with st.expander("[DEBUG] 중복 분석 과정", expanded=False):
+                                    st.write(f"**분석 텍스트**: {question_text[:100]}...")
+                                    st.write(f"**기존 문서 개수**: {len(existing_docs)}개")
+
                                 if duplicate_pairs:
+                                    print(f"[DEBUG] 중복 쌍 발견: {len(duplicate_pairs)}개")
+                                    st.info(f"[ANALYSIS] {len(duplicate_pairs)}개 유사도 쌍 분석 중...")
+
+                                    similarity_details = []
                                     for pair in duplicate_pairs:
+                                        print(f"[DEBUG] 쌍: {pair.doc1_id} <-> {pair.doc2_id}, 코사인: {pair.cos_sim:.3f}")
                                         if pair.doc2_id == 'new_question' or pair.doc1_id == 'new_question':
-                                            is_duplicate = True
-                                            # 중복된 기존 문제 찾기
-                                            existing_id = pair.doc1_id if pair.doc2_id == 'new_question' else pair.doc2_id
-                                            for doc in existing_docs:
-                                                if doc['id'] == existing_id:
-                                                    st.error(f"[ERROR] 중복된 문제가 감지되었습니다!")
-                                                    st.warning(f"기존 문제: {doc['text'][:100]}...")
-                                                    st.info(f"유사도 점수: {pair.combined_score:.3f} (코사인: {pair.cos_sim:.3f}, 자카드: {pair.jaccard_score:.3f})")
-                                                    break
-                                            break
+                                            similarity_details.append(f"코사인 유사도: {pair.cos_sim:.3f}")
+                                            # 가장 높은 유사도 저장
+                                            if pair.cos_sim > max_similarity:
+                                                max_similarity = pair.cos_sim
+                                                print(f"[DEBUG] 최대 유사도 업데이트: {max_similarity:.3f}")
+
+                                            # 유사도 0.85 이상이면 중복으로 판정
+                                            if pair.cos_sim >= 0.85:
+                                                is_duplicate = True
+                                                # 중복된 기존 문제 찾기
+                                                existing_id = pair.doc1_id if pair.doc2_id == 'new_question' else pair.doc2_id
+                                                for doc in existing_docs:
+                                                    if doc['id'] == existing_id:
+                                                        similar_text = doc['text'][:100]
+                                                        st.error(f"[ERROR] 중복된 문제가 감지되었습니다! (코사인 유사도: {pair.cos_sim:.3f})")
+                                                        st.warning(f"기존 문제: {doc['text'][:100]}...")
+                                                        st.info(f"상세 유사도 - 코사인: {pair.cos_sim:.3f}, 자카드: {pair.jaccard_score:.3f}, 종합: {pair.combined_score:.3f}")
+                                                        break
+                                                break
+
+                                    if similarity_details:
+                                        with st.expander("[SIMILARITY] 유사도 분석 결과", expanded=True):
+                                            for detail in similarity_details[:5]:  # 상위 5개만 표시
+                                                st.write(f"• {detail}")
+
+                                # 중복이 아니더라도 높은 유사도는 표시
+                                if not duplicate_pairs:
+                                    with st.expander("[SIMILARITY] 유사도 분석 결과", expanded=True):
+                                        st.write("유사 항목 없음 (비교 대상 부족 또는 최초 저장)")
+                                if not is_duplicate and max_similarity > 0.5:
+                                    st.info(f"[INFO] 유사한 문제 발견 (코사인 유사도: {max_similarity:.3f}) - 저장은 가능합니다")
+                                elif not is_duplicate and max_similarity > 0:
+                                    st.info(f"[INFO] 저장 진행 (최대 유사도: {max_similarity:.3f})")
+                                else:
+                                    print(f"[DEBUG] 최종 유사도 상태 - max_similarity: {max_similarity}, is_duplicate: {is_duplicate}")
 
                                 if is_duplicate:
+                                    # ChromaDB와 Firebase 모두 저장 차단
+                                    st.error("[BLOCKED] 유사도 0.85 이상으로 저장이 차단되었습니다")
                                     return  # 중복이면 저장하지 않음
                         except Exception as e:
                             # 컬렉션이 없으면 새로 생성될 것이므로 중복 체크 스킵
@@ -289,15 +522,20 @@ def question_input_form():
                             'imageAnalysis': None
                         }
 
-                        # Process image if uploaded
-                        if uploaded_image is not None:
+                        # Process multiple images if uploaded
+                        if uploaded_images:
                             try:
-                                # Save image
+                                # Save all images
                                 image_dir = Path("storage/images")
                                 image_dir.mkdir(parents=True, exist_ok=True)
 
-                                image_filename = f"question_{question_data['id']}.{uploaded_image.name.split('.')[-1]}"
-                                image_path = image_dir / image_filename
+                                image_paths = []
+                                image_urls = []
+
+                                for idx, uploaded_image in enumerate(uploaded_images):
+                                    image_filename = f"question_{question_data['id']}_img{idx+1}.{uploaded_image.name.split('.')[-1]}"
+                                    image_path = image_dir / image_filename
+                                    image_paths.append(str(image_path))
 
                                 # 품질/중복 검사 (용량, 해시)
                                 try:
@@ -334,64 +572,80 @@ def question_input_form():
                                 with open(image_path, "wb") as f:
                                     f.write(uploaded_image.getbuffer())
 
-                                question_data['imagePath'] = str(image_path)
+                                    # Firebase Storage 업로드 및 URL 설정
+                                    try:
+                                        with open(image_path, 'rb') as img_file:
+                                            image_url = firebase_service.upload_image_to_storage(
+                                                image_data=img_file,
+                                                path_prefix="problems/",
+                                                filename=image_filename,
+                                                use_webp=True
+                                            )
+                                        if image_url:
+                                            image_urls.append(image_url)
+                                    except Exception as e:
+                                        st.warning(f"[WARNING] 이미지 {idx+1} 업로드 실패: {e}")
 
-                                # Firebase Storage 업로드 및 URL 설정
-                                try:
-                                    with open(image_path, 'rb') as img_file:
-                                        image_url = firebase_service.upload_image_to_storage(
-                                            image_data=img_file,
-                                            path_prefix="problems/",
-                                            filename=image_filename,
-                                            use_webp=True
-                                        )
-                                    if image_url:
-                                        question_data['hasImage'] = True
-                                        question_data['imageUrl'] = image_url
-                                        question_data['imageUrls'] = [image_url]
-                                        # 해시 인덱스 저장
-                                        try:
-                                            hash_index[image_hash] = image_url
-                                            with open(hash_index_path, 'w', encoding='utf-8') as hf:
-                                                json.dump(hash_index, hf, ensure_ascii=False, indent=2)
-                                        except Exception:
-                                            pass
-                                except Exception as e:
-                                    pass
+                                # Update question data with all images
+                                question_data['imagePaths'] = image_paths
+                                question_data['hasImage'] = True
+                                question_data['imageUrl'] = image_urls[0] if image_urls else None  # First image as main
+                                question_data['imageUrls'] = image_urls
+                                question_data['displayWithProblem'] = display_with_problem
 
-                                # Analyze image if checkbox was checked
+                                # Analyze all images if checkbox was checked
                                 if analyze_on_save:
-                                    with st.spinner("[ANALYSIS] 이미지 분석 중..."):
-                                        # Use hierarchical analyzer
-                                        image = Image.open(uploaded_image)
+                                    with st.spinner(f"[ANALYSIS] {len(uploaded_images)}개 이미지 분석 중..."):
+                                        all_analyses = []
                                         analyzer = ImageHierarchicalAnalyzer()
 
-                                        # 이미지를 임시 파일로 저장
-                                        temp_image_path = f"temp_question_{question_data['id']}.jpg"
-                                        image.save(temp_image_path)
+                                        for idx, uploaded_image in enumerate(uploaded_images):
+                                            try:
+                                                # Use hierarchical analyzer
+                                                image = Image.open(uploaded_image)
 
-                                        analysis_result = analyzer.analyze_image(
-                                            image_path=temp_image_path,
-                                            domain="medical",
-                                            context="의학 문제 이미지",
-                                            save_to_chroma=False  # ChromaDB는 별도 저장
-                                        )
+                                                # 이미지를 임시 파일로 저장
+                                                temp_image_path = f"temp_question_{question_data['id']}_img{idx+1}.jpg"
+                                                image.save(temp_image_path)
 
-                                        # 임시 파일 정리
-                                        if os.path.exists(temp_image_path):
-                                            os.remove(temp_image_path)
+                                                analysis_result = analyzer.analyze_image(
+                                                    image_path=temp_image_path,
+                                                    domain="medical",
+                                                    context="의학 문제 이미지",
+                                                    save_to_chroma=False  # ChromaDB는 별도 저장
+                                                )
 
-                                        question_data['imageAnalysis'] = {
-                                            'main_objects': analysis_result.main_objects,
-                                            'medical_tags': analysis_result.medical_tags,
-                                            'description': analysis_result.description,
-                                            'confidence': analysis_result.confidence_score,
-                                            'analyzed_by': analysis_result.analyzed_by
-                                        }
+                                                # 임시 파일 정리
+                                                if os.path.exists(temp_image_path):
+                                                    os.remove(temp_image_path)
 
-                                        st.success("[SUCCESS] 이미지 분석 완료!")
+                                                all_analyses.append({
+                                                    'image_index': idx + 1,
+                                                    'main_objects': analysis_result.main_objects,
+                                                    'medical_tags': analysis_result.medical_tags,
+                                                    'description': analysis_result.description,
+                                                    'confidence': analysis_result.confidence_score,
+                                                    'analyzed_by': analysis_result.analyzed_by
+                                                })
+                                            except Exception as e:
+                                                st.warning(f"[WARNING] 이미지 {idx+1} 분석 실패: {e}")
+
+                                        if all_analyses:
+                                            question_data['imageAnalyses'] = all_analyses
+                                            question_data['imageAnalysis'] = all_analyses[0]  # Keep first as main for compatibility
+                                            st.success(f"[SUCCESS] {len(all_analyses)}개 이미지 분석 완료!")
                             except Exception as e:
                                 st.warning(f"[WARNING] 이미지 처리 중 오류: {e}")
+
+                        # Process clipboard URLs if provided
+                        elif clipboard_urls:
+                            url_list = [url.strip() for url in clipboard_urls.split('\n') if url.strip()]
+                            if url_list:
+                                question_data['imageUrls'] = url_list
+                                question_data['clipboardUrls'] = url_list
+                                question_data['hasImage'] = True
+                                question_data['displayWithProblem'] = display_with_problem
+                                question_data['imageUrl'] = url_list[0]  # First URL as main
 
                         # AI 분석 자동 실행
                         with st.spinner("[ANALYSIS] AI가 문제를 분석 중..."):
@@ -475,11 +729,33 @@ def question_input_form():
                                 }]
                                 )
 
-                                st.success(f"[SUCCESS] ChromaDB 저장 완료!")
+                                # 유사도 정보와 함께 저장 완료 메시지
+                                if 'max_similarity' in locals() and max_similarity > 0:
+                                    st.success(f"[SUCCESS] ChromaDB 저장 완료! (최대 유사도: {max_similarity:.3f})")
+                                else:
+                                    st.success(f"[SUCCESS] ChromaDB 저장 완료!")
                             except Exception as e:
                                 st.error(f"[ERROR] ChromaDB 저장 실패: {e}")
 
-                        # Firebase에 자동 업로드 (분야에 따라 다른 컬렉션 사용)
+
+                        # Save to JSON first (before Firebase modifies the data)
+                        json_dir = Path("C:\\Users\\tkand\\Desktop\\development\\Hanoa\\Hanoa Hub Version 1\\saved_questions")
+                        json_dir.mkdir(parents=True, exist_ok=True)
+                        json_filename = f"question_{question_data['id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                        json_path = json_dir / json_filename
+
+                        with open(json_path, 'w', encoding='utf-8') as f:
+                            # 일부 객체(firebase SERVER_TIMESTAMP 등) 직렬화 안전 처리
+                            json.dump(question_data, f, ensure_ascii=False, indent=2, default=str)
+
+                        # Also save to Jobs/completed folder for compatibility
+                        completed_path = Path("Jobs/completed")
+                        completed_path.mkdir(parents=True, exist_ok=True)
+                        completed_file = completed_path / f"problem_{question_data['id']}.json"
+                        with open(completed_file, 'w', encoding='utf-8') as f:
+                            json.dump(question_data, f, ensure_ascii=False, indent=2, default=str)
+
+                        # Firebase에 자동 업로드 (분야에 따라 다른 컬렉션 사용) - JSON 저장 후
                         with st.spinner("[UPLOAD] Firebase에 업로드 중..."):
                             try:
                                 problem_data = {
@@ -509,19 +785,15 @@ def question_input_form():
                                     upload_result = firebase_service.upload_medical_problem(problem_data)
 
                                 if upload_result and upload_result.get('success', False):
-                                    st.success(f"[SUCCESS] Firebase 업로드 성공! (분야: {field})")
+                                    # 유사도 정보와 함께 Firebase 업로드 성공 메시지
+                                    if 'max_similarity' in locals() and max_similarity > 0:
+                                        st.success(f"[SUCCESS] Firebase 업로드 성공! (분야: {field}, 최대 유사도: {max_similarity:.3f})")
+                                    else:
+                                        st.success(f"[SUCCESS] Firebase 업로드 성공! (분야: {field})")
                                 else:
                                     st.warning("[WARNING] Firebase 업로드 부분 실패")
                             except Exception as e:
                                 st.error(f"[ERROR] Firebase 업로드 실패: {e}")
-
-                        # Jobs/completed 폴더에 저장
-                        completed_path = Path("Jobs/completed")
-                        completed_path.mkdir(parents=True, exist_ok=True)
-
-                        completed_file = completed_path / f"problem_{question_data['id']}.json"
-                        with open(completed_file, 'w', encoding='utf-8') as f:
-                            json.dump(question_data, f, ensure_ascii=False, indent=2)
 
                         # RAG(ChromaDB)에 질문 등록
                         try:
@@ -530,7 +802,12 @@ def question_input_form():
                             pass
 
                         st.success(f"[SUCCESS] 문제 저장 완료!")
-                        st.info(f"[INFO] 파일 위치: {completed_file}")
+                        st.info(f"[SAVE] JSON 파일 저장 위치: {json_path}")
+
+                        # Display image count if images were saved
+                        if question_data.get('imageUrls'):
+                            st.info(f"[INFO] {len(question_data['imageUrls'])}개 이미지가 문제와 함께 저장되었습니다")
+
 
                     except Exception as e:
                         st.error(f"[ERROR] 저장 실패: {e}")
@@ -549,160 +826,329 @@ def concept_input_form():
     """Form for inputting medical concepts with image support"""
     st.subheader("[INFO] 의학 개념 입력")
 
+
     with st.form("concept_form"):
-        # Image upload section
+        # Image upload section with multiple files support
         st.subheader("[IMAGE] 이미지 업로드 (선택사항)")
-        uploaded_image = st.file_uploader(
-            "개념 관련 이미지",
+
+        # Multiple file uploader
+        uploaded_images = st.file_uploader(
+            "개념 관련 이미지 (여러 개 선택 가능)",
             type=['png', 'jpg', 'jpeg', 'webp'],
+            accept_multiple_files=True,
             help="개념과 관련된 의료 이미지, 도식, 차트 등을 업로드하세요 (PNG, JPG, JPEG, WebP 지원)"
         )
 
+        # Clipboard paste support
+        st.markdown("#### [PASTE] 클립보드 이미지 URL 붙여넣기")
+        clipboard_urls = st.text_area(
+            "이미지 URL을 붙여넣으세요 (한 줄에 하나씩)",
+            height=100,
+            placeholder="예시:\nhttps://example.com/image1.jpg\nhttps://example.com/image2.jpg",
+            key="concept_clipboard_urls"
+        )
+
+        uploaded_image = uploaded_images[0] if uploaded_images else None
+
         image_analysis_result = None
         image_url = None
-        if uploaded_image is not None:
-            # Display uploaded image
-            col_img1, col_img2 = st.columns([1, 2])
-            with col_img1:
-                st.image(uploaded_image, caption="업로드된 이미지", width=200)
 
-            with col_img2:
-                analyze_on_save = st.checkbox("[ANALYSIS] 이미지 자동 분석", value=True, key="concept_analyze_image")
-                if analyze_on_save:
-                    st.info("[INFO] 이미지가 저장 시 자동 분석됩니다")
+        # Display all uploaded images
+        if uploaded_images:
+            st.write(f"[INFO] {len(uploaded_images)}개 이미지 업로드됨")
+            cols = st.columns(min(len(uploaded_images), 3))
+            for idx, img in enumerate(uploaded_images[:3]):
+                with cols[idx % 3]:
+                    st.image(img, caption=f"이미지 {idx+1}", width=150)
+
+            if len(uploaded_images) > 3:
+                st.info(f"[INFO] 추가 {len(uploaded_images)-3}개 이미지가 더 있습니다")
+
+            analyze_on_save = st.checkbox("[ANALYSIS] 모든 이미지 자동 분석", value=True, key="concept_analyze_images")
+            if analyze_on_save:
+                st.info(f"[INFO] {len(uploaded_images)}개 이미지가 저장 시 자동 분석됩니다")
+
+        # Process clipboard URLs
+        elif clipboard_urls:
+            url_list = [url.strip() for url in clipboard_urls.split('\n') if url.strip()]
+            if url_list:
+                st.write(f"[INFO] {len(url_list)}개 URL 입력됨")
+                for idx, url in enumerate(url_list[:3]):
+                    st.text(f"URL {idx+1}: {url[:50]}...")
+                if len(url_list) > 3:
+                    st.info(f"[INFO] 추가 {len(url_list)-3}개 URL이 더 있습니다")
 
         st.divider()
+
+        # Initialize session state for concept fields
+        if 'concept_description' not in st.session_state:
+            st.session_state.concept_description = ""
+        if 'concept_tags' not in st.session_state:
+            st.session_state.concept_tags = ""
 
         description = st.text_area(
             "개념 설명 *",
             height=200,
-            help="개념에 대한 상세한 설명을 입력하세요"
+            help="개념에 대한 상세한 설명을 입력하세요",
+            key="concept_description"
         )
 
-        tags = st.text_input("태그", help="쉼표로 구분 (선택사항)")
+        tags = st.text_input("태그", help="쉼표로 구분 (선택사항)", key="concept_tags")
+
+        # AI 자동 개념 유사도 검색 개수 결정
+        auto_concept_search = st.toggle(
+            "[AI] 개념 검색 개수 자동 결정",
+            value=True,
+            key="auto_concept_search",
+            help="Gemini 2.5 Flash가 개념 복잡도에 따라 최적 검색 개수 자동 결정"
+        )
+
+        if auto_concept_search:
+            st.info("[AI] Gemini 2.5 Flash가 개념 분석 후 최적 검색 개수를 자동 결정합니다")
+            concept_dup_n_results = None  # AI가 나중에 결정
+        else:
+            concept_dup_n_results = st.slider(
+                "[MANUAL] 유사 항목 검색 개수",
+                min_value=1,
+                max_value=5,
+                value=3,
+                key="concept_dup_n_results",
+                help="개념 중복 검사 시 검색할 상위 결과 수 (수동 설정)"
+            )
 
         submitted = st.form_submit_button("[SAVE] 개념 저장")
 
         if submitted:
             # 개념 설명이 있거나 이미지가 업로드된 경우 저장 가능
             if description or uploaded_image is not None:
-                try:
-                    concept_data = {
-                        'id': str(uuid.uuid4()),
-                        'title': '',  # 나중에 설정
-                        'description': description or '',  # 설명이 없으면 빈 문자열
-                        'tags': [tag.strip() for tag in tags.split(',') if tag.strip()],
-                        'createdAt': datetime.now().isoformat(),
-                        'createdBy': 'streamlit_user',
-                        'hasImage': uploaded_image is not None,
-                        'imageAnalysis': None,
-                        'imageUrl': None
-                    }
+                # === 1단계: 먼저 중복 검사 수행 ===
+                with st.spinner("[CHECK] 개념 중복 확인 중..."):
+                    try:
+                        from rag_engine_multi_domain import multi_domain_rag_engine
 
-                    # Process image if uploaded
-                    if uploaded_image is not None:
-                        try:
-                            # Upload image to Firebase Storage
-                            with st.spinner("[UPLOAD] 이미지를 Firebase Storage에 업로드 중..."):
-                                image_url = firebase_service.upload_image_to_storage(
-                                    image_data=uploaded_image,
-                                    path_prefix="concepts/images/",
-                                    filename=f"concept_{concept_data['id']}.jpg",
-                                    use_webp=False  # JPEG로 변경
+                        # 개념 텍스트 준비 (설명 기반)
+                        concept_text = description or ''
+
+                        # AI 자동 개념 검색 개수 결정 (auto_concept_search가 True인 경우)
+                        if concept_dup_n_results is None:  # AI 자동 결정 모드
+                            # Gemini 2.5 Flash로 개념 복잡도 분석
+                            try:
+                                if ADVANCED_DEDUP_AVAILABLE:
+                                    from advanced_dedup.genre_classifier import medical_genre_classifier
+                                    # 개념 텍스트 복잡도 분석
+                                    concept_length = len(concept_text) if concept_text else 0
+                                    description_length = len(description) if description else 0
+                                    tags_count = len(tags.split(',')) if tags else 0
+                                    has_image = uploaded_image is not None
+
+                                    # AI 기반 개념 복잡도 점수 (0.0 ~ 1.0)
+                                    complexity_prompt = f"다음 의료 개념의 복잡도를 0.0~1.0으로 평가하세요. 설명 길이, 태그 수, 이미지 포함 여부를 고려하여 점수만 반환하세요.\n\n개념: {concept_text[:200]}\n설명 길이: {description_length}\n태그 수: {tags_count}\n이미지 포함: {has_image}"
+
+                                    try:
+                                        complexity_response = medical_genre_classifier.gemini_client.generate_content(complexity_prompt)
+                                        complexity_score = float(complexity_response.text.strip())
+                                        complexity_score = max(0.0, min(1.0, complexity_score))  # 0.0~1.0 범위로 제한
+                                    except:
+                                        # AI 실패시 휴리스틱 방식
+                                        complexity_score = min(1.0, (concept_length / 300 + description_length / 500 + tags_count / 10 + (0.2 if has_image else 0)) / 4)
+
+                                    # 복잡도에 따른 개념 검색 개수 자동 결정
+                                    if complexity_score < 0.3:
+                                        auto_concept_dup_n_results = 2  # 단순한 개념
+                                    elif complexity_score < 0.6:
+                                        auto_concept_dup_n_results = 3  # 보통 복잡도
+                                    elif complexity_score < 0.8:
+                                        auto_concept_dup_n_results = 4  # 복잡한 개념
+                                    else:
+                                        auto_concept_dup_n_results = 5  # 매우 복잡한 개념
+
+                                    st.info(f"[AI] 개념 복잡도 분석: {complexity_score:.2f} → 검색 개수: {auto_concept_dup_n_results}개")
+                                else:
+                                    # 고급 엔진 없으면 휴리스틱 방식
+                                    concept_complexity = min(5, max(2, (concept_length // 100) + (description_length // 150) + tags_count))
+                                    auto_concept_dup_n_results = concept_complexity
+                                    st.info(f"[FALLBACK] 텍스트 기반 개념 자동 결정: {auto_concept_dup_n_results}개")
+                            except Exception as e:
+                                st.warning(f"[WARNING] AI 개념 자동 결정 실패, 기본값 사용: {e}")
+                                auto_concept_dup_n_results = 3
+                        else:
+                            auto_concept_dup_n_results = concept_dup_n_results
+
+                        # 중복 검사 수행
+                        is_duplicate = False
+                        max_similarity = 0.0
+
+                        if concept_text:
+                            collection_name = 'medical_concepts'
+                            try:
+                                collection = multi_domain_rag_engine.chroma_client.get_or_create_collection(collection_name)
+
+                                # 유사한 개념 검색
+                                results = collection.query(
+                                    query_texts=[concept_text],
+                                    n_results=auto_concept_dup_n_results,
+                                    where={"type": "concept"}
                                 )
 
-                                if image_url:
-                                    concept_data['imageUrl'] = image_url
-                                    st.success(f"[SUCCESS] 이미지 업로드 완료! URL: {image_url[:50]}...")
+                                # 검색 결과가 없더라도 [GENRE]/[SIMILARITY] 표시는 항상 수행
+                                has_docs = bool(results.get('documents') and results['documents'][0])
+                                if not has_docs:
+                                    if ADVANCED_DEDUP_AVAILABLE:
+                                        from advanced_dedup.genre_classifier import medical_genre_classifier
+                                        _g, _conf = medical_genre_classifier.classify_text(concept_text)
+                                        with st.expander("[GENRE] 장르 분류 결과", expanded=True):
+                                            st.write(f"**장르**: {_g.value}")
+                                            st.write(f"**신뢰도**: {_conf:.3f}")
+                                            st.info("[INFO] 비교 대상이 없어 유사도 분석은 표시만 진행")
+                                    else:
+                                        from deduplication_engine import deduplication_engine as _simple_engine
+                                        _tl = (concept_text or "").lower()
+                                        _scores = {g: sum(1 for kw in kws if kw.lower() in _tl) for g, kws in _simple_engine.genres.items()}
+                                        _bg = max(_scores, key=_scores.get) if _scores else 'medical'
+                                        _tot = sum(_scores.values()) or 1
+                                        _cf = (_scores.get(_bg, 0) / _tot)
+                                        with st.expander("[GENRE] 장르 분류 결과", expanded=True):
+                                            st.write(f"**장르**: {_bg}")
+                                            st.write(f"**신뢰도**: {_cf:.3f}")
+                                            st.info("[FALLBACK] 키워드 기반 분류")
+
+                                    with st.expander("[SIMILARITY] 유사도 분석 결과", expanded=True):
+                                        st.write("유사 항목 없음 (비교 대상 부족 또는 최초 저장)")
+
+                                # 중복 검사 로직 (기존 코드와 동일)
+                                # ... (여기에 기존 중복 검사 코드가 들어감)
+
+                            except Exception as e:
+                                st.error(f"[ERROR] 개념 중복 검사 실패: {e}")
+
+                    except Exception as e:
+                        st.error(f"[ERROR] 개념 중복 검사 오류: {e}")
+
+                # 중복이 아닌 경우에만 계속 진행
+                if not is_duplicate:
+                    try:
+                        concept_data = {
+                            'id': str(uuid.uuid4()),
+                            'title': '',  # 나중에 설정
+                            'description': description or '',  # 설명이 없으면 빈 문자열
+                            'tags': [tag.strip() for tag in tags.split(',') if tag.strip()],
+                            'createdAt': datetime.now().isoformat(),
+                            'createdBy': 'streamlit_user',
+                            'hasImage': uploaded_image is not None,
+                            'imageAnalysis': None,
+                            'imageUrl': None
+                        }
+
+                        # Process multiple images if uploaded
+                        image_urls = []
+                        if uploaded_images:
+                            try:
+                                # Upload all images to Firebase Storage
+                                with st.spinner(f"[UPLOAD] {len(uploaded_images)}개 이미지를 Firebase Storage에 업로드 중..."):
+                                    for idx, img in enumerate(uploaded_images):
+                                        image_url = firebase_service.upload_image_to_storage(
+                                            image_data=img,
+                                            path_prefix="concepts/images/",
+                                            filename=f"concept_{concept_data['id']}_img{idx+1}.jpg",
+                                            use_webp=False  # JPEG로 변경
+                                        )
+                                        if image_url:
+                                            image_urls.append(image_url)
+                                            st.success(f"[SUCCESS] 이미지 {idx+1} 업로드 완료!")
+
+                                if image_urls:
+                                    concept_data['imageUrl'] = image_urls[0]  # 첫 번째 이미지를 대표로
+                                    concept_data['imageUrls'] = image_urls  # 모든 이미지 URL 저장
+                                    st.success(f"[SUCCESS] 총 {len(image_urls)}개 이미지 업로드 완료!")
                                 else:
                                     st.error("[ERROR] 이미지 업로드 실패 - Firebase Storage 연결을 확인하세요")
                                     concept_data['hasImage'] = False
                                     raise Exception("Firebase Storage 업로드 실패")
 
-                            # Analyze image if checkbox was checked and upload succeeded
-                            if analyze_on_save and image_url:
-                                with st.spinner("[ANALYSIS] 이미지 분석 중..."):
-                                    try:
-                                        # Use hierarchical analyzer
-                                        image = Image.open(uploaded_image)
-                                        analyzer = ImageHierarchicalAnalyzer()
+                                # Analyze images if checkbox was checked and upload succeeded
+                                if analyze_on_save and image_urls:
+                                    with st.spinner("[ANALYSIS] 이미지 분석 중..."):
+                                        try:
+                                            # Use hierarchical analyzer
+                                            image = Image.open(uploaded_images[0])  # Use first uploaded image
+                                            analyzer = ImageHierarchicalAnalyzer()
 
-                                        # 이미지를 임시 파일로 저장
-                                        temp_image_path = f"temp_concept_{concept_data['id']}.jpg"
-                                        image.save(temp_image_path)
+                                            # 이미지를 임시 파일로 저장
+                                            temp_image_path = f"temp_concept_{concept_data['id']}.jpg"
+                                            image.save(temp_image_path)
 
-                                        st.info(f"[DEBUG] 임시 파일 생성: {temp_image_path}")
+                                            st.info(f"[DEBUG] 임시 파일 생성: {temp_image_path}")
 
-                                        analysis_result = analyzer.analyze_image(
-                                            image_path=temp_image_path,
-                                            domain="medical",
-                                            context="의학 개념 이미지",
-                                            save_to_chroma=False  # ChromaDB는 별도 저장
-                                        )
+                                            analysis_result = analyzer.analyze_image(
+                                                image_path=temp_image_path,
+                                                domain="medical",
+                                                context="의학 개념 이미지",
+                                                save_to_chroma=False  # ChromaDB는 별도 저장
+                                            )
 
-                                        # 임시 파일 정리
-                                        if os.path.exists(temp_image_path):
-                                            os.remove(temp_image_path)
+                                            # 임시 파일 정리
+                                            if os.path.exists(temp_image_path):
+                                                os.remove(temp_image_path)
 
-                                        if analysis_result:
-                                            concept_data['imageAnalysis'] = {
-                                                'main_objects': getattr(analysis_result, 'main_objects', []),
-                                                'medical_tags': getattr(analysis_result, 'medical_tags', []),
-                                                'description': getattr(analysis_result, 'description', ''),
-                                                'confidence': getattr(analysis_result, 'confidence_score', 0.0),
-                                                'analyzed_by': getattr(analysis_result, 'analyzed_by', 'unknown'),
-                                                'analysis_type': 'concept_image'
-                                            }
+                                            if analysis_result:
+                                                concept_data['imageAnalysis'] = {
+                                                    'main_objects': getattr(analysis_result, 'main_objects', []),
+                                                    'medical_tags': getattr(analysis_result, 'medical_tags', []),
+                                                    'description': getattr(analysis_result, 'description', ''),
+                                                    'confidence': getattr(analysis_result, 'confidence_score', 0.0),
+                                                    'analyzed_by': getattr(analysis_result, 'analyzed_by', 'unknown'),
+                                                    'analysis_type': 'concept_image'
+                                                }
 
-                                            # 이미지 분석 결과를 개념 설명에 자동으로 추가
-                                            if hasattr(analysis_result, 'description') and analysis_result.description:
-                                                concept_data['imageDescription'] = analysis_result.description
+                                                # 이미지 분석 결과를 개념 설명에 자동으로 추가
+                                                if hasattr(analysis_result, 'description') and analysis_result.description:
+                                                    concept_data['imageDescription'] = analysis_result.description
 
-                                                # 설명이 없으면 이미지 분석 결과를 설명으로 사용
-                                                if not concept_data['description']:
-                                                    concept_data['description'] = analysis_result.description
-                                                    st.info("[AUTO] 이미지 분석 결과를 개념 설명으로 자동 설정했습니다")
+                                                    # 설명이 없으면 이미지 분석 결과를 설명으로 사용
+                                                    if not concept_data['description']:
+                                                        concept_data['description'] = analysis_result.description
+                                                        st.info("[AUTO] 이미진 분석 결과를 개념 설명으로 자동 설정했습니다")
 
-                                                # 분석 결과 표시
-                                                with st.expander("[RESULT] 이미지 분석 결과", expanded=True):
-                                                    # AI 모델 정보 먼저 표시
-                                                    analysis_model = getattr(analysis_result, 'analyzed_by', 'unknown')
-                                                    if analysis_model == 'gemini_flash':
-                                                        st.info("🤖 **분석 모델**: Gemini 2.5 Flash (1단계 - 빠른 분석)")
-                                                    elif analysis_model == 'gpt5_mini':
-                                                        st.info("🤖 **분석 모델**: GPT-5 Mini (2단계 - 중간 검수)")
-                                                    elif analysis_model == 'gpt5_enhanced':
-                                                        st.info("🤖 **분석 모델**: GPT-5 (3단계 - 최고급 정밀 분석)")
-                                                    else:
-                                                        st.info(f"🤖 **분석 모델**: {analysis_model}")
+                                                    # 분석 결과 표시
+                                                    with st.expander("[RESULT] 이미지 분석 결과", expanded=True):
+                                                        # AI 모델 정보 먼저 표시
+                                                        analysis_model = getattr(analysis_result, 'analyzed_by', 'unknown')
+                                                        if analysis_model == 'gemini_flash':
+                                                            st.info("[AI] **분석 모델**: Gemini 2.5 Flash (1단계 - 빠른 분석)")
+                                                        elif analysis_model == 'gpt5_mini':
+                                                            st.info("[AI] **분석 모델**: GPT-5 Mini (2단계 - 중간 검수)")
+                                                        elif analysis_model == 'gpt5_enhanced':
+                                                            st.info("[AI] **분석 모델**: GPT-5 (3단계 - 최고급 정밀 분석)")
+                                                        else:
+                                                            st.info(f"[AI] **분석 모델**: {analysis_model}")
 
-                                                    st.write("**분석된 주요 객체:**", ', '.join(analysis_result.main_objects[:5]))
-                                                    st.write("**의료 태그:**", ', '.join(analysis_result.medical_tags[:5]))
-                                                    st.write("**이미지 설명:**", analysis_result.description)
-                                                    st.write("**신뢰도:**", f"{analysis_result.confidence_score:.1%}")
+                                                        st.write("**분석된 주요 객체:**", ', '.join(analysis_result.main_objects[:5]))
+                                                        st.write("**의료 태그:**", ', '.join(analysis_result.medical_tags[:5]))
+                                                        st.write("**이미지 설명:**", analysis_result.description)
+                                                        st.write("**신뢰도:**", f"{analysis_result.confidence_score:.1%}")
 
-                                                    # 에스컬레이션 이유 표시 (있는 경우)
-                                                    if hasattr(analysis_result, 'escalation_reason') and analysis_result.escalation_reason:
-                                                        st.caption(f"💡 **에스컬레이션 이유**: {analysis_result.escalation_reason}")
+                                                        # 에스컬레이션 이유 표시 (있는 경우)
+                                                        if hasattr(analysis_result, 'escalation_reason') and analysis_result.escalation_reason:
+                                                            st.caption(f"[INFO] **에스컬레이션 이유**: {analysis_result.escalation_reason}")
 
-                                            st.success("[SUCCESS] 이미지 분석 완료!")
-                                        else:
-                                            st.error("[ERROR] 이미지 분석 결과가 비어있습니다")
+                                                st.success("[SUCCESS] 이미지 분석 완료!")
+                                            else:
+                                                st.error("[ERROR] 이미지 분석 결과가 비어있습니다")
+                                                concept_data['imageAnalysis'] = None
+
+                                        except Exception as analysis_error:
+                                            st.error(f"[ERROR] 이미지 분석 실패: {analysis_error}")
                                             concept_data['imageAnalysis'] = None
+                                            # 임시 파일 정리
+                                            if os.path.exists(f"temp_concept_{concept_data['id']}.jpg"):
+                                                os.remove(f"temp_concept_{concept_data['id']}.jpg")
 
-                                    except Exception as analysis_error:
-                                        st.error(f"[ERROR] 이미지 분석 실패: {analysis_error}")
-                                        concept_data['imageAnalysis'] = None
-                                        # 임시 파일 정리
-                                        if os.path.exists(f"temp_concept_{concept_data['id']}.jpg"):
-                                            os.remove(f"temp_concept_{concept_data['id']}.jpg")
-
-                        except Exception as e:
-                            st.error(f"[ERROR] 이미지 처리 실패: {e}")
-                            st.error("[DEBUG] Firebase 서비스 초기화 상태를 확인하세요")
-                            concept_data['hasImage'] = False
-                            concept_data['imageUrl'] = None
-                            concept_data['imageAnalysis'] = None
+                            except Exception as e:
+                                st.error(f"[ERROR] 이미지 처리 실패: {e}")
+                                st.error("[DEBUG] Firebase 서비스 초기화 상태를 확인하세요")
+                                concept_data['hasImage'] = False
+                                concept_data['imageUrl'] = None
+                                concept_data['imageAnalysis'] = None
 
                     # AI 분석 (설명이 있는 경우에만)
                     if concept_data['description']:
@@ -727,6 +1173,218 @@ def concept_input_form():
                         concept_data['title'] = f"의료 이미지: {', '.join(main_objects)}"
                     else:
                         concept_data['title'] = f"개념 {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+
+                    # ChromaDB에 저장 전 중복 체크
+                    with st.spinner("[CHECK] 개념 중복 확인 중..."):
+                        try:
+                            from rag_engine_multi_domain import multi_domain_rag_engine
+
+                            # 개념 텍스트 준비 (설명 또는 이미지 분석 결과)
+                            concept_text = concept_data.get('description', '')
+                            if not concept_text and concept_data.get('imageAnalysis'):
+                                # 이미지만 있는 경우 이미지 분석 결과를 텍스트로 사용
+                                img_analysis = concept_data['imageAnalysis']
+                                if isinstance(img_analysis, dict):
+                                    concept_text = f"이미지: {', '.join(img_analysis.get('main_objects', []))} {', '.join(img_analysis.get('medical_tags', []))}"
+
+                            is_duplicate = False
+                            max_similarity = 0.0
+
+                            print(f"[DEBUG] 개념 중복 체크 시작")
+                            print(f"[DEBUG] 개념 텍스트: {concept_text[:50] if concept_text else 'None'}...")
+                            print(f"[DEBUG] 설명 텍스트: {description[:50] if description else 'None'}...")
+
+                            # AI 자동 개념 검색 개수 결정 (auto_concept_search가 True인 경우)
+                            if concept_dup_n_results is None:  # AI 자동 결정 모드
+                                # Gemini 2.5 Flash로 개념 복잡도 분석
+                                try:
+                                    if ADVANCED_DEDUP_AVAILABLE:
+                                        from advanced_dedup.genre_classifier import medical_genre_classifier
+                                        # 개념 텍스트 복잡도 분석
+                                        concept_length = len(concept_text) if concept_text else 0
+                                        description_length = len(description) if description else 0
+                                        tags_count = len(tags.split(',')) if tags else 0
+                                        has_image = bool(concept_data.get('hasImage'))
+
+                                        # AI 기반 개념 복잡도 점수 (0.0 ~ 1.0)
+                                        complexity_prompt = f"다음 의료 개념의 복잡도를 0.0~1.0으로 평가하세요. 설명 길이, 태그 수, 이미지 포함 여부를 고려하여 점수만 반환하세요.\n\n개념: {concept_text[:200] if concept_text else description[:200]}\n설명 길이: {description_length}\n태그 수: {tags_count}\n이미지 포함: {has_image}"
+
+                                        try:
+                                            complexity_response = medical_genre_classifier.gemini_client.generate_content(complexity_prompt)
+                                            complexity_score = float(complexity_response.text.strip())
+                                            complexity_score = max(0.0, min(1.0, complexity_score))  # 0.0~1.0 범위로 제한
+                                        except:
+                                            # AI 실패시 휴리스틱 방식
+                                            complexity_score = min(1.0, (concept_length / 300 + description_length / 500 + tags_count / 10 + (0.2 if has_image else 0)) / 4)
+
+                                        # 복잡도에 따른 개념 검색 개수 자동 결정
+                                        if complexity_score < 0.3:
+                                            auto_concept_dup_n_results = 2  # 단순한 개념
+                                        elif complexity_score < 0.6:
+                                            auto_concept_dup_n_results = 3  # 보통 복잡도
+                                        elif complexity_score < 0.8:
+                                            auto_concept_dup_n_results = 4  # 복잡한 개념
+                                        else:
+                                            auto_concept_dup_n_results = 5  # 매우 복잡한 개념
+
+                                        st.info(f"[AI] 개념 복잡도 분석: {complexity_score:.2f} → 검색 개수: {auto_concept_dup_n_results}개")
+                                    else:
+                                        # 고급 엔진 없으면 휴리스틱 방식
+                                        concept_complexity = min(5, max(2, (concept_length // 100) + (description_length // 150) + tags_count))
+                                        auto_concept_dup_n_results = concept_complexity
+                                        st.info(f"[FALLBACK] 텍스트 기반 개념 자동 결정: {auto_concept_dup_n_results}개")
+                                except Exception as e:
+                                    st.warning(f"[WARNING] AI 개념 자동 결정 실패, 기본값 사용: {e}")
+                                    auto_concept_dup_n_results = 3
+                            else:
+                                auto_concept_dup_n_results = concept_dup_n_results
+
+                            if concept_text:
+                                # medical_concepts 컬렉션에서 유사한 개념 검색
+                                collection_name = 'medical_concepts'
+                                try:
+                                    collection = multi_domain_rag_engine.chroma_client.get_or_create_collection(collection_name)
+
+                                    # 유사한 개념 검색
+                                    results = collection.query(
+                                        query_texts=[concept_text],
+                                        n_results=auto_concept_dup_n_results,
+                                        where={"type": "concept"}
+                                    )
+
+                                    # 검색 결과가 없더라도 [GENRE]/[SIMILARITY] 표시는 항상 수행
+                                    has_docs = bool(results.get('documents') and results['documents'][0])
+                                    if not has_docs:
+                                        if ADVANCED_DEDUP_AVAILABLE:
+                                            from advanced_dedup.genre_classifier import medical_genre_classifier
+                                            _g, _conf = medical_genre_classifier.classify_text(concept_text)
+                                            with st.expander("[GENRE] 장르 분류 결과", expanded=True):
+                                                st.write(f"**장르**: {_g.value}")
+                                                st.write(f"**신뢰도**: {_conf:.3f}")
+                                                st.info("[INFO] 비교 대상이 없어 유사도 분석은 표시만 진행")
+                                        else:
+                                            from deduplication_engine import deduplication_engine as _simple_engine
+                                            _tl = (concept_text or "").lower()
+                                            _scores = {g: sum(1 for kw in kws if kw.lower() in _tl) for g, kws in _simple_engine.genres.items()}
+                                            _bg = max(_scores, key=_scores.get) if _scores else 'medical'
+                                            _tot = sum(_scores.values()) or 1
+                                            _cf = (_scores.get(_bg, 0) / _tot)
+                                            with st.expander("[GENRE] 장르 분류 결과", expanded=True):
+                                                st.write(f"**장르**: {_bg}")
+                                                st.write(f"**신뢰도**: {_cf:.3f}")
+                                                st.info("[FALLBACK] 키워드 기반 분류")
+
+                                        with st.expander("[SIMILARITY] 유사도 분석 결과", expanded=True):
+                                            st.write("유사 항목 없음 (비교 대상 부족 또는 최초 저장)")
+
+                                    # 중복 확인
+                                    if results['documents'] and results['documents'][0]:
+                                        existing_docs = []
+                                        for i, doc_text in enumerate(results['documents'][0]):
+                                            if doc_text:
+                                                existing_docs.append({
+                                                    'id': results['ids'][0][i] if results['ids'] and results['ids'][0] else str(i),
+                                                    'text': doc_text,
+                                                    'meta': results['metadatas'][0][i] if results['metadatas'] and results['metadatas'][0] else {}
+                                                })
+
+                                        # 고급 중복 제거 엔진 사용 (개념용)
+                                        if ADVANCED_DEDUP_AVAILABLE:
+                                            st.info("[INFO] 고급 개념 중복 제거 엔진 사용 중 (장르 분류 + Cross-Encoder + 다양성 보존)")
+                                            print(f"[DEBUG] 고급 개념 엔진 호출 - 기존 문서 수: {len(existing_docs)}")
+                                            st.info(f"[DEBUG] 기존 개념 {len(existing_docs)}개와 비교 중...")
+
+                                            # 개념 장르 분류 먼저 표시
+                                            from advanced_dedup.genre_classifier import medical_genre_classifier
+                                            genre, genre_confidence = medical_genre_classifier.classify_text(concept_text)
+                                            with st.expander("[GENRE] 장르 분류 결과", expanded=True):
+                                                st.write(f"**장르**: {genre.value}")
+                                                st.write(f"**신뢰도**: {genre_confidence:.3f}")
+                                                if genre_confidence > 0.5:
+                                                    st.success(f"[AI] Gemini 2.5 Flash 분류 사용")
+                                                else:
+                                                    st.info(f"[FALLBACK] 키워드 기반 분류 사용")
+
+                                            # 새 개념을 포함한 전체 문서로 중복 검사
+                                            all_docs = existing_docs + [{
+                                                'id': 'new_concept',
+                                                'text': concept_text,
+                                                'domain': 'medical',
+                                                'type': 'concept'
+                                            }]
+
+                                            unique_ids, duplicate_pairs = use_advanced_deduplication(
+                                                all_docs,
+                                                domain='medical',
+                                                return_pairs=True,
+                                                apply_mmr=True,  # 개념에서는 MMR 활성화
+                                                target_diversity_ratio=0.7
+                                            )
+                                            print(f"[DEBUG] 고급 개념 엔진 결과 - 중복 쌍: {len(duplicate_pairs) if duplicate_pairs else 0}개")
+                                        else:
+                                            # 기존 방식 폴백
+                                            # [GENRE] 폴백 분류 표시 (고급 엔진 미사용 시)
+                                            from deduplication_engine import deduplication_engine as _simple_engine
+                                            _tl = (concept_text or "").lower()
+                                            _scores = {g: sum(1 for kw in kws if kw.lower() in _tl) for g, kws in _simple_engine.genres.items()}
+                                            _bg = max(_scores, key=_scores.get) if _scores else 'medical'
+                                            _tot = sum(_scores.values()) or 1
+                                            _cf = (_scores.get(_bg, 0) / _tot)
+                                            with st.expander("[GENRE] 장르 분류 결과", expanded=True):
+                                                st.write(f"**장르**: {_bg}")
+                                                st.write(f"**신뢰도**: {_cf:.3f}")
+                                                st.info("[FALLBACK] 키워드 기반 분류")
+                                            unique_ids, duplicate_pairs = deduplication_engine.deduplicate(
+                                                existing_docs + [{'id': 'new_concept', 'text': concept_text, 'domain': 'medical', 'type': 'concept'}],
+                                                domain='medical',
+                                                return_pairs=True
+                                            )
+
+                                        # 중복 확인 및 유사도 계산
+                                        if duplicate_pairs:
+                                            print(f"[DEBUG] 개념 중복 쌍 발견: {len(duplicate_pairs)}개")
+                                            st.info(f"[ANALYSIS] {len(duplicate_pairs)}개 개념 유사도 쌍 분석 중...")
+
+                                            concept_similarity_details = []
+                                            for pair in duplicate_pairs:
+                                                print(f"[DEBUG] 개념 쌍: {pair.doc1_id} <-> {pair.doc2_id}, 코사인: {pair.cos_sim:.3f}")
+                                                if pair.doc2_id == 'new_concept' or pair.doc1_id == 'new_concept':
+                                                    concept_similarity_details.append(f"코사인 유사도: {pair.cos_sim:.3f}")
+                                                    # 가장 높은 유사도 저장
+                                                    if pair.cos_sim > max_similarity:
+                                                        max_similarity = pair.cos_sim
+                                                        print(f"[DEBUG] 개념 최대 유사도 업데이트: {max_similarity:.3f}")
+
+                                            if concept_similarity_details:
+                                                with st.expander("[SIMILARITY] 유사도 분석 결과", expanded=True):
+                                                    for detail in concept_similarity_details[:5]:  # 상위 5개만 표시
+                                                        st.write(f"• {detail}")
+
+                                                    if max_similarity >= 0.85:
+                                                        is_duplicate = True
+                                                        st.error(f"[ERROR] 유사도 0.85 이상으로 중복 판정 (최대 코사인: {max_similarity:.3f})")
+                                        if not duplicate_pairs:
+                                            with st.expander("[SIMILARITY] 유사도 분석 결과", expanded=True):
+                                                st.write("유사 항목 없음 (비교 대상 부족 또는 최초 저장)")
+                                        if not is_duplicate and max_similarity > 0.5:
+                                            st.info(f"[INFO] 유사한 개념 발견 (코사인 유사도: {max_similarity:.3f}) - 저장은 가능합니다")
+                                        elif not is_duplicate and max_similarity > 0:
+                                            st.info(f"[INFO] 개념 저장 진행 (최대 유사도: {max_similarity:.3f})")
+                                        else:
+                                            print(f"[DEBUG] 개념 최종 유사도 상태 - max_similarity: {max_similarity}, is_duplicate: {is_duplicate}")
+
+                                except Exception as e:
+                                    # 컬렉션이 없으면 첫 번째 개념이므로 중복 체크 스킵
+                                    st.info("[INFO] 첫 번째 개념입니다")
+                                    pass
+
+                            if is_duplicate:
+                                # ChromaDB와 Firebase 모두 저장 차단
+                                st.error("[BLOCKED] 유사도 0.85 이상으로 저장이 차단되었습니다")
+                                return
+
+                        except Exception as e:
+                            st.warning(f"[WARNING] 중복 체크 실패: {e}")
 
                     # ChromaDB에 저장
                     with st.spinner("[SAVE] ChromaDB에 저장 중..."):
@@ -798,20 +1456,59 @@ def concept_input_form():
                                 metadatas=[metadata]
                             )
 
-                            st.success(f"[SUCCESS] ChromaDB 저장 완료! (컬렉션: {collection_name})")
+                            # 유사도 정보와 함께 저장 완료 메시지
+                            if max_similarity > 0:
+                                st.success(f"[SUCCESS] ChromaDB 저장 완료! (컬렉션: {collection_name}, 최대 유사도: {max_similarity:.3f})")
+                            else:
+                                st.success(f"[SUCCESS] ChromaDB 저장 완료! (컬렉션: {collection_name})")
                         except Exception as e:
                             st.error(f"[ERROR] ChromaDB 저장 실패: {e}")
 
-                    # Firebase에 업로드
+                    # JSON 파일로 로컬 저장 (Firebase 업로드 전에 저장)
+                    import json
+                    json_dir = "C:\\Users\\tkand\\Desktop\\development\\Hanoa\\Hanoa Hub Version 1\\saved_concepts"
+                    os.makedirs(json_dir, exist_ok=True)
+
+                    json_filename = f"concept_{concept_data['id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                    json_path = os.path.join(json_dir, json_filename)
+
+                    # Save JSON before Firebase upload (to avoid sentinel issues)
+                    with open(json_path, 'w', encoding='utf-8') as f:
+                        json.dump(concept_data, f, ensure_ascii=False, indent=2, default=str)
+
+                    st.success(f"[SUCCESS] 개념 저장 완료!")
+                    st.info(f"[SAVE] JSON 파일 저장 위치: {json_path}")
+
+
+                    # Firebase에 업로드 (JSON 저장 후)
                     with st.spinner("[UPLOAD] Firebase에 업로드 중..."):
                         try:
+                            # Firebase 초기화 상태 확인
+                            st.info(f"[DEBUG] Firebase 초기화 상태: {firebase_service.initialized}")
+
+                            # 디버그 정보 출력
+                            st.info(f"[DEBUG] 개념 ID: {concept_data.get('id', 'N/A')}")
+                            st.info(f"[DEBUG] 업로드할 데이터 키: {list(concept_data.keys())}")
+
                             upload_result = firebase_service.upload_concept(concept_data)
-                            if upload_result.get('success'):
-                                st.success(f"[SUCCESS] Firebase 업로드 성공!")
+
+                            # 업로드 결과 상세 출력
+                            st.info(f"[DEBUG] 업로드 결과: {upload_result}")
+
+                            if upload_result and upload_result.get('success'):
+                                # 유사도 정보와 함께 Firebase 업로드 성공 메시지
+                                if 'max_similarity' in locals() and max_similarity > 0:
+                                    st.success(f"[SUCCESS] Firebase 업로드 성공! (컬렉션: medical_concepts, 최대 유사도: {max_similarity:.3f})")
+                                else:
+                                    st.success(f"[SUCCESS] Firebase 업로드 성공! (컬렉션: medical_concepts)")
+                                st.success(f"[SUCCESS] 문서 ID: {upload_result.get('id', 'N/A')}")
+                            else:
+                                st.warning(f"[WARNING] Firebase 업로드 실패: {upload_result.get('message', 'Unknown error')}")
                         except Exception as e:
                             st.error(f"[ERROR] Firebase 업로드 실패: {e}")
+                            import traceback
+                            st.error(f"[ERROR] 상세 오류: {traceback.format_exc()}")
 
-                    st.success("[SUCCESS] 개념 저장 완료!")
 
                 except Exception as e:
                     st.error(f"[ERROR] 저장 실패: {e}")
@@ -1721,26 +2418,91 @@ def chromadb_check_tab():
     st.subheader("[STATS] 컬렉션 통계")
 
     try:
+        from services.firebase_service import firebase_service
+        from rag_engine_multi_domain import multi_domain_rag_engine
+
         stats_data = []
 
-        for coll_name in ["nursing_questions", "nursing_concepts", "medical_concepts"]:
+        # ChromaDB collections to check
+        collections_info = [
+            ("nursing_questions", "간호 문제"),
+            ("medical_problems", "의학 문제"),
+            ("medical_concepts", "의학 개념")
+        ]
+
+        # Get ChromaDB stats
+        for coll_name, display_name in collections_info:
             try:
                 collection = multi_domain_rag_engine.chroma_client.get_or_create_collection(coll_name)
                 count = collection.count()
                 stats_data.append({
-                    '컬렉션': coll_name,
+                    '데이터베이스': 'ChromaDB',
+                    '컬렉션': display_name,
                     '데이터 수': count,
                     '상태': '[ACTIVE]' if count > 0 else '[EMPTY]'
                 })
-            except:
+            except Exception as e:
                 stats_data.append({
-                    '컬렉션': coll_name,
+                    '데이터베이스': 'ChromaDB',
+                    '컬렉션': display_name,
                     '데이터 수': 0,
                     '상태': '[ERROR]'
                 })
 
-        stats_df = pd.DataFrame(stats_data)
-        st.dataframe(stats_df, use_container_width=True)
+        # Get Firebase stats
+        try:
+            # All problems from Firebase (nursing + medical)
+            problems = firebase_service.get_problems(limit=1000)
+            stats_data.append({
+                '데이터베이스': 'Firebase',
+                '컬렉션': '문제 (전체)',
+                '데이터 수': len(problems) if problems else 0,
+                '상태': '[ACTIVE]' if problems else '[EMPTY]'
+            })
+
+            # Concepts from Firebase
+            concepts = firebase_service.get_concepts(limit=1000)
+            stats_data.append({
+                '데이터베이스': 'Firebase',
+                '컬렉션': '개념 (전체)',
+                '데이터 수': len(concepts) if concepts else 0,
+                '상태': '[ACTIVE]' if concepts else '[EMPTY]'
+            })
+
+        except Exception as e:
+            st.warning(f"[WARNING] Firebase 통계 로드 실패: {e}")
+
+        # Display statistics
+        if stats_data:
+            stats_df = pd.DataFrame(stats_data)
+
+            # Summary metrics
+            col1, col2, col3, col4 = st.columns(4)
+
+            with col1:
+                total_chromadb = sum(row['데이터 수'] for row in stats_data if row['데이터베이스'] == 'ChromaDB')
+                st.metric("[ChromaDB] 총 데이터", f"{total_chromadb:,}")
+
+            with col2:
+                total_firebase = sum(row['데이터 수'] for row in stats_data if row['데이터베이스'] == 'Firebase')
+                st.metric("[Firebase] 총 데이터", f"{total_firebase:,}")
+
+            with col3:
+                total_problems = sum(row['데이터 수'] for row in stats_data if '문제' in row['컬렉션'])
+                st.metric("[PROBLEMS] 총 문제", f"{total_problems:,}")
+
+            with col4:
+                total_concepts = sum(row['데이터 수'] for row in stats_data if '개념' in row['컬렉션'])
+                st.metric("[CONCEPTS] 총 개념", f"{total_concepts:,}")
+
+            # Detailed table
+            st.dataframe(
+                stats_df.style.highlight_max(subset=['데이터 수'], color='lightgreen'),
+                use_container_width=True
+            )
+
+            # Last update time
+            st.caption(f"[UPDATE] 마지막 업데이트: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     except Exception as e:
         st.error(f"[ERROR] 통계 로드 실패: {e}")
@@ -1748,3 +2510,7 @@ def chromadb_check_tab():
 
 if __name__ == "__main__":
     main()
+
+
+
+
