@@ -10,6 +10,41 @@ from pathlib import Path
 import streamlit as st
 import pandas as pd
 
+# Streamlit 폭 관련 파라미터 변경(임시 호환 셔팀): use_container_width -> width
+try:
+    def _map_ucw(kwargs):
+        if 'use_container_width' in kwargs:
+            val = kwargs.pop('use_container_width')
+            kwargs.setdefault('width', 'stretch' if val else 'content')
+        return kwargs
+
+    if hasattr(st, 'button'):
+        _orig_button = st.button
+        def _button_shim(*args, **kwargs):
+            return _orig_button(*args, **_map_ucw(kwargs))
+        st.button = _button_shim
+
+    if hasattr(st, 'form_submit_button'):
+        _orig_form_submit_button = st.form_submit_button
+        def _form_submit_button_shim(*args, **kwargs):
+            return _orig_form_submit_button(*args, **_map_ucw(kwargs))
+        st.form_submit_button = _form_submit_button_shim
+
+    if hasattr(st, 'image'):
+        _orig_image = st.image
+        def _image_shim(*args, **kwargs):
+            return _orig_image(*args, **_map_ucw(kwargs))
+        st.image = _image_shim
+
+    if hasattr(st, 'dataframe'):
+        _orig_dataframe = st.dataframe
+        def _dataframe_shim(*args, **kwargs):
+            return _orig_dataframe(*args, **_map_ucw(kwargs))
+        st.dataframe = _dataframe_shim
+except Exception:
+    # 셔팀 적용 실패시 무시(기본 동작 유지)
+    pass
+
 from config import (
     validate_config, JOBS_DIR, OBSIDIAN_VAULT_PATH,
     DOMAIN_COLLECTIONS, DEFAULT_DOMAIN, ENABLE_CROSS_DOMAIN_SEARCH,
@@ -30,7 +65,19 @@ from deduplication_engine import deduplication_engine
 
 # 고급 기능들을 안전하게 임포트
 try:
-    from deduplication_engine import use_advanced_deduplication, ADVANCED_DEDUP_AVAILABLE
+    import deduplication_engine as _de
+    # 고급 기능 가용성 확인
+    use_advanced_deduplication = getattr(_de, 'use_advanced_deduplication', None)
+    ADVANCED_DEDUP_AVAILABLE = bool(getattr(_de, 'ADVANCED_DEDUP_AVAILABLE', False)) and callable(use_advanced_deduplication)
+    if not ADVANCED_DEDUP_AVAILABLE:
+        # Fallback: 고급 엔진 미가용 시 기본 엔진으로 위임
+        def use_advanced_deduplication(documents, domain='medical', **kwargs):
+            return deduplication_engine.deduplicate(
+                documents,
+                domain=domain,
+                return_pairs=kwargs.get('return_pairs', True)
+            )
+        ADVANCED_DEDUP_AVAILABLE = False
     print("[SUCCESS] 고급 중복 제거 기능 임포트 성공")
 except ImportError as e:
     print(f"[WARNING] 고급 중복 제거 임포트 실패, 기본 엔진 사용: {e}")
@@ -249,24 +296,9 @@ def question_input_form():
         answer_options = ["1번", "2번", "3번", "4번", "5번"]
         correct_answer_number = st.selectbox("정답", answer_options)
 
-        # AI 자동 유사도 검색 개수 결정
-        auto_search_count = st.toggle(
-            "[AI] 유사도 검색 개수 자동 결정",
-            value=True,
-            help="Gemini 2.5 Flash가 텍스트 복잡도에 따라 최적 검색 개수 자동 결정"
-        )
-
-        if auto_search_count:
-            st.info("[AI] Gemini 2.5 Flash가 텍스트 분석 후 최적 검색 개수를 자동 결정합니다")
-            dup_n_results = None  # AI가 나중에 결정
-        else:
-            dup_n_results = st.slider(
-                "[MANUAL] 유사 항목 검색 개수",
-                min_value=1,
-                max_value=5,
-                value=3,
-                help="중복 검사 시 검색할 상위 결과 수 (수동 설정)"
-            )
+        # 유사도 검색 개수 고정 (5개)
+        st.info("[FIXED] 중복 검사 시 항상 5개 문제와 비교합니다 (안정적 동작 보장)")
+        dup_n_results = 5  # 고정값 사용
 
         # Get the actual answer based on selection
         if correct_answer_number:
@@ -291,51 +323,6 @@ def question_input_form():
                         # 문제 중복 체크를 위해 ChromaDB에서 검색
                         from rag_engine_multi_domain import multi_domain_rag_engine
 
-                        # AI 자동 검색 개수 결정 (auto_search_count가 True인 경우)
-                        if dup_n_results is None:  # AI 자동 결정 모드
-                            # Gemini 2.5 Flash로 텍스트 복잡도 분석
-                            try:
-                                if ADVANCED_DEDUP_AVAILABLE:
-                                    from advanced_dedup.genre_classifier import medical_genre_classifier
-                                    # 텍스트 길이와 복잡도에 따라 자동 결정
-                                    text_length = len(question_text) if question_text else 0
-                                    # 기본값으로 choice_count 설정 (폼에서 선택지는 항상 5개)
-                                    choice_count = 5  # 문제 형식상 항상 5개 선택지
-                                    explanation_length = len(explanation) if explanation else 0
-
-                                    # AI 기반 복잡도 점수 (0.0 ~ 1.0)
-                                    complexity_prompt = f"다음 의료 문제의 복잡도를 0.0~1.0으로 평가하세요. 텍스트 길이, 선택지 수, 전문성을 고려하여 점수만 반환하세요.\n\n문제: {question_text[:200]}\n선택지 수: {choice_count}\n해설 길이: {explanation_length}"
-
-                                    try:
-                                        complexity_response = medical_genre_classifier.gemini_client.generate_content(complexity_prompt)
-                                        complexity_score = float(complexity_response.text.strip())
-                                        complexity_score = max(0.0, min(1.0, complexity_score))  # 0.0~1.0 범위로 제한
-                                    except:
-                                        # AI 실패시 휴리스틱 방식
-                                        complexity_score = min(1.0, (text_length / 500 + choice_count / 10 + explanation_length / 300) / 3)
-
-                                    # 복잡도에 따른 검색 개수 자동 결정
-                                    if complexity_score < 0.3:
-                                        auto_dup_n_results = 2  # 단순한 문제
-                                    elif complexity_score < 0.6:
-                                        auto_dup_n_results = 3  # 보통 복잡도
-                                    elif complexity_score < 0.8:
-                                        auto_dup_n_results = 4  # 복잡한 문제
-                                    else:
-                                        auto_dup_n_results = 5  # 매우 복잡한 문제
-
-                                    st.info(f"[AI] 복잡도 분석: {complexity_score:.2f} → 검색 개수: {auto_dup_n_results}개")
-                                else:
-                                    # 고급 엔진 없으면 휴리스틱 방식
-                                    text_complexity = min(5, max(2, len(question_text) // 100 + choice_count))
-                                    auto_dup_n_results = text_complexity
-                                    st.info(f"[FALLBACK] 텍스트 기반 자동 결정: {auto_dup_n_results}개")
-                            except Exception as e:
-                                st.warning(f"[WARNING] AI 자동 결정 실패, 기본값 사용: {e}")
-                                auto_dup_n_results = 3
-                        else:
-                            auto_dup_n_results = dup_n_results
-
                         # 문제 텍스트로 유사한 문제 검색
                         if field == "간호":
                             collection_name = 'nursing_questions'
@@ -344,6 +331,15 @@ def question_input_form():
 
                         try:
                             collection = multi_domain_rag_engine.chroma_client.get_or_create_collection(collection_name)
+
+                            # 컬렉션의 문서 수 확인하고 적응형 검색 개수 결정
+                            total_docs = collection.count()
+                            if total_docs <= 2:
+                                auto_dup_n_results = total_docs if total_docs > 0 else 1
+                            elif total_docs <= 5:
+                                auto_dup_n_results = min(total_docs - 1, 3)
+                            else:
+                                auto_dup_n_results = 5
 
                             # 정확히 같은 문제 텍스트가 있는지 확인
                             results = collection.query(
@@ -929,50 +925,6 @@ def concept_input_form():
                         # 개념 텍스트 준비 (설명 기반)
                         concept_text = description or ''
 
-                        # AI 자동 개념 검색 개수 결정 (auto_concept_search가 True인 경우)
-                        if concept_dup_n_results is None:  # AI 자동 결정 모드
-                            # Gemini 2.5 Flash로 개념 복잡도 분석
-                            try:
-                                if ADVANCED_DEDUP_AVAILABLE:
-                                    from advanced_dedup.genre_classifier import medical_genre_classifier
-                                    # 개념 텍스트 복잡도 분석
-                                    concept_length = len(concept_text) if concept_text else 0
-                                    description_length = len(description) if description else 0
-                                    tags_count = len(tags.split(',')) if tags else 0
-                                    has_image = uploaded_image is not None
-
-                                    # AI 기반 개념 복잡도 점수 (0.0 ~ 1.0)
-                                    complexity_prompt = f"다음 의료 개념의 복잡도를 0.0~1.0으로 평가하세요. 설명 길이, 태그 수, 이미지 포함 여부를 고려하여 점수만 반환하세요.\n\n개념: {concept_text[:200]}\n설명 길이: {description_length}\n태그 수: {tags_count}\n이미지 포함: {has_image}"
-
-                                    try:
-                                        complexity_response = medical_genre_classifier.gemini_client.generate_content(complexity_prompt)
-                                        complexity_score = float(complexity_response.text.strip())
-                                        complexity_score = max(0.0, min(1.0, complexity_score))  # 0.0~1.0 범위로 제한
-                                    except:
-                                        # AI 실패시 휴리스틱 방식
-                                        complexity_score = min(1.0, (concept_length / 300 + description_length / 500 + tags_count / 10 + (0.2 if has_image else 0)) / 4)
-
-                                    # 복잡도에 따른 개념 검색 개수 자동 결정
-                                    if complexity_score < 0.3:
-                                        auto_concept_dup_n_results = 2  # 단순한 개념
-                                    elif complexity_score < 0.6:
-                                        auto_concept_dup_n_results = 3  # 보통 복잡도
-                                    elif complexity_score < 0.8:
-                                        auto_concept_dup_n_results = 4  # 복잡한 개념
-                                    else:
-                                        auto_concept_dup_n_results = 5  # 매우 복잡한 개념
-
-                                    st.info(f"[AI] 개념 복잡도 분석: {complexity_score:.2f} → 검색 개수: {auto_concept_dup_n_results}개")
-                                else:
-                                    # 고급 엔진 없으면 휴리스틱 방식
-                                    concept_complexity = min(5, max(2, (concept_length // 100) + (description_length // 150) + tags_count))
-                                    auto_concept_dup_n_results = concept_complexity
-                                    st.info(f"[FALLBACK] 텍스트 기반 개념 자동 결정: {auto_concept_dup_n_results}개")
-                            except Exception as e:
-                                st.warning(f"[WARNING] AI 개념 자동 결정 실패, 기본값 사용: {e}")
-                                auto_concept_dup_n_results = 3
-                        else:
-                            auto_concept_dup_n_results = concept_dup_n_results
 
                         # 중복 검사 수행
                         is_duplicate = False
@@ -982,6 +934,15 @@ def concept_input_form():
                             collection_name = 'medical_concepts'
                             try:
                                 collection = multi_domain_rag_engine.chroma_client.get_or_create_collection(collection_name)
+
+                                # 컬렉션의 문서 수 확인하고 적응형 검색 개수 결정
+                                total_docs = collection.count()
+                                if total_docs <= 2:
+                                    auto_concept_dup_n_results = total_docs if total_docs > 0 else 1
+                                elif total_docs <= 5:
+                                    auto_concept_dup_n_results = min(total_docs - 1, 3)
+                                else:
+                                    auto_concept_dup_n_results = 5
 
                                 # 유사한 개념 검색
                                 results = collection.query(
@@ -1194,57 +1155,22 @@ def concept_input_form():
                                 print(f"[DEBUG] 개념 텍스트: {concept_text[:50] if concept_text else 'None'}...")
                                 print(f"[DEBUG] 설명 텍스트: {description[:50] if description else 'None'}...")
             
-                                # AI 자동 개념 검색 개수 결정 (auto_concept_search가 True인 경우)
-                                if concept_dup_n_results is None:  # AI 자동 결정 모드
-                                    # Gemini 2.5 Flash로 개념 복잡도 분석
-                                    try:
-                                        if ADVANCED_DEDUP_AVAILABLE:
-                                            from advanced_dedup.genre_classifier import medical_genre_classifier
-                                            # 개념 텍스트 복잡도 분석
-                                            concept_length = len(concept_text) if concept_text else 0
-                                            description_length = len(description) if description else 0
-                                            tags_count = len(tags.split(',')) if tags else 0
-                                            has_image = bool(concept_data.get('hasImage'))
-            
-                                            # AI 기반 개념 복잡도 점수 (0.0 ~ 1.0)
-                                            complexity_prompt = f"다음 의료 개념의 복잡도를 0.0~1.0으로 평가하세요. 설명 길이, 태그 수, 이미지 포함 여부를 고려하여 점수만 반환하세요.\n\n개념: {concept_text[:200] if concept_text else description[:200]}\n설명 길이: {description_length}\n태그 수: {tags_count}\n이미지 포함: {has_image}"
-            
-                                            try:
-                                                complexity_response = medical_genre_classifier.gemini_client.generate_content(complexity_prompt)
-                                                complexity_score = float(complexity_response.text.strip())
-                                                complexity_score = max(0.0, min(1.0, complexity_score))  # 0.0~1.0 범위로 제한
-                                            except:
-                                                # AI 실패시 휴리스틱 방식
-                                                complexity_score = min(1.0, (concept_length / 300 + description_length / 500 + tags_count / 10 + (0.2 if has_image else 0)) / 4)
-            
-                                            # 복잡도에 따른 개념 검색 개수 자동 결정
-                                            if complexity_score < 0.3:
-                                                auto_concept_dup_n_results = 2  # 단순한 개념
-                                            elif complexity_score < 0.6:
-                                                auto_concept_dup_n_results = 3  # 보통 복잡도
-                                            elif complexity_score < 0.8:
-                                                auto_concept_dup_n_results = 4  # 복잡한 개념
-                                            else:
-                                                auto_concept_dup_n_results = 5  # 매우 복잡한 개념
-            
-                                            st.info(f"[AI] 개념 복잡도 분석: {complexity_score:.2f} → 검색 개수: {auto_concept_dup_n_results}개")
-                                        else:
-                                            # 고급 엔진 없으면 휴리스틱 방식
-                                            concept_complexity = min(5, max(2, (concept_length // 100) + (description_length // 150) + tags_count))
-                                            auto_concept_dup_n_results = concept_complexity
-                                            st.info(f"[FALLBACK] 텍스트 기반 개념 자동 결정: {auto_concept_dup_n_results}개")
-                                    except Exception as e:
-                                        st.warning(f"[WARNING] AI 개념 자동 결정 실패, 기본값 사용: {e}")
-                                        auto_concept_dup_n_results = 3
-                                else:
-                                    auto_concept_dup_n_results = concept_dup_n_results
             
                                 if concept_text:
                                     # medical_concepts 컬렉션에서 유사한 개념 검색
                                     collection_name = 'medical_concepts'
                                     try:
                                         collection = multi_domain_rag_engine.chroma_client.get_or_create_collection(collection_name)
-            
+
+                                        # 컬렉션의 문서 수 확인하고 적응형 검색 개수 결정
+                                        total_docs = collection.count()
+                                        if total_docs <= 2:
+                                            auto_concept_dup_n_results = total_docs if total_docs > 0 else 1
+                                        elif total_docs <= 5:
+                                            auto_concept_dup_n_results = min(total_docs - 1, 3)
+                                        else:
+                                            auto_concept_dup_n_results = 5
+
                                         # 유사한 개념 검색
                                         results = collection.query(
                                             query_texts=[concept_text],
@@ -2075,7 +2001,7 @@ def generation_history_section():
                     st.metric("Gemini", gemini_count)
 
                 # Display the dataframe
-                st.dataframe(df, use_container_width=True)
+                st.dataframe(df, width='stretch')
 
                 # Model usage chart
                 if len(df) > 0:
@@ -2100,7 +2026,7 @@ def generation_history_section():
                 "생성자": ["ai_batch_generator", "user_monitor", "manual"]
             }
             df = pd.DataFrame(sample_data)
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(df, width='stretch')
 
 
 def system_management_tab():
@@ -2188,7 +2114,7 @@ def system_management_tab():
 
                 if model_data:
                     model_df = pd.DataFrame(model_data)
-                    st.dataframe(model_df, use_container_width=True)
+                    st.dataframe(model_df, width='stretch')
             else:
                 st.info("[INFO] 해당 기간의 사용 기록이 없습니다")
 
@@ -2206,7 +2132,7 @@ def system_management_tab():
                 {'모델': 'Gemini 2.5 Flash', '입력 (1M tokens)': '$0.10', '출력 (1M tokens)': '$0.40'},
             ]
             pricing_df = pd.DataFrame(pricing_data)
-            st.dataframe(pricing_df, use_container_width=True)
+            st.dataframe(pricing_df, width='stretch')
 
 
 def chromadb_check_tab():
@@ -2323,7 +2249,7 @@ def chromadb_check_tab():
         st.divider()
 
         # Show data table
-        st.dataframe(st.session_state.chromadb_data, use_container_width=True)
+        st.dataframe(st.session_state.chromadb_data, width='stretch')
 
         # Image preview section
         st.divider()
@@ -2497,7 +2423,7 @@ def chromadb_check_tab():
             # Detailed table
             st.dataframe(
                 stats_df.style.highlight_max(subset=['데이터 수'], color='lightgreen'),
-                use_container_width=True
+                width='stretch'
             )
 
             # Last update time
