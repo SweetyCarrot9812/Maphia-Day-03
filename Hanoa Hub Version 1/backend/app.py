@@ -1150,371 +1150,370 @@ def concept_input_form():
                                 concept_data['imageUrl'] = None
                                 concept_data['imageAnalysis'] = None
 
-                    # AI 분석 (설명이 있는 경우에만)
-                    if concept_data['description']:
-                        with st.spinner("[ANALYSIS] AI가 개념을 분석 중..."):
-                            try:
-                                analyzed = gemini_service.analyze_concept(concept_data['description'])
-                                concept_data.update({
-                                    'keywords': analyzed.get('keywords', []),
-                                    'category': analyzed.get('category', ''),
-                                    'detailed_explanation': analyzed.get('detailed_explanation', concept_data['description'])
-                                })
-                                st.success("[SUCCESS] AI 분석 완료!")
-                            except Exception as e:
-                                st.warning(f"[WARNING] AI 분석 실패: {e}")
-
-                    # 제목 설정 (설명 또는 이미지 분석 결과 기반)
-                    if concept_data.get('description'):
-                        concept_data['title'] = concept_data['description'][:50] + '...' if len(concept_data['description']) > 50 else concept_data['description']
-                    elif concept_data.get('imageAnalysis') and concept_data['imageAnalysis'].get('main_objects'):
-                        # 이미지 주요 객체를 기반으로 제목 생성
-                        main_objects = concept_data['imageAnalysis']['main_objects'][:3]
-                        concept_data['title'] = f"의료 이미지: {', '.join(main_objects)}"
-                    else:
-                        concept_data['title'] = f"개념 {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-
-                    # ChromaDB에 저장 전 중복 체크
-                    with st.spinner("[CHECK] 개념 중복 확인 중..."):
-                        try:
-                            from rag_engine_multi_domain import multi_domain_rag_engine
-
-                            # 개념 텍스트 준비 (설명 또는 이미지 분석 결과)
-                            concept_text = concept_data.get('description', '')
-                            if not concept_text and concept_data.get('imageAnalysis'):
-                                # 이미지만 있는 경우 이미지 분석 결과를 텍스트로 사용
-                                img_analysis = concept_data['imageAnalysis']
-                                if isinstance(img_analysis, dict):
-                                    concept_text = f"이미지: {', '.join(img_analysis.get('main_objects', []))} {', '.join(img_analysis.get('medical_tags', []))}"
-
-                            is_duplicate = False
-                            max_similarity = 0.0
-
-                            print(f"[DEBUG] 개념 중복 체크 시작")
-                            print(f"[DEBUG] 개념 텍스트: {concept_text[:50] if concept_text else 'None'}...")
-                            print(f"[DEBUG] 설명 텍스트: {description[:50] if description else 'None'}...")
-
-                            # AI 자동 개념 검색 개수 결정 (auto_concept_search가 True인 경우)
-                            if concept_dup_n_results is None:  # AI 자동 결정 모드
-                                # Gemini 2.5 Flash로 개념 복잡도 분석
+                        # AI 분석 (설명이 있는 경우에만)
+                        if concept_data['description']:
+                            with st.spinner("[ANALYSIS] AI가 개념을 분석 중..."):
                                 try:
-                                    if ADVANCED_DEDUP_AVAILABLE:
-                                        from advanced_dedup.genre_classifier import medical_genre_classifier
-                                        # 개념 텍스트 복잡도 분석
-                                        concept_length = len(concept_text) if concept_text else 0
-                                        description_length = len(description) if description else 0
-                                        tags_count = len(tags.split(',')) if tags else 0
-                                        has_image = bool(concept_data.get('hasImage'))
-
-                                        # AI 기반 개념 복잡도 점수 (0.0 ~ 1.0)
-                                        complexity_prompt = f"다음 의료 개념의 복잡도를 0.0~1.0으로 평가하세요. 설명 길이, 태그 수, 이미지 포함 여부를 고려하여 점수만 반환하세요.\n\n개념: {concept_text[:200] if concept_text else description[:200]}\n설명 길이: {description_length}\n태그 수: {tags_count}\n이미지 포함: {has_image}"
-
-                                        try:
-                                            complexity_response = medical_genre_classifier.gemini_client.generate_content(complexity_prompt)
-                                            complexity_score = float(complexity_response.text.strip())
-                                            complexity_score = max(0.0, min(1.0, complexity_score))  # 0.0~1.0 범위로 제한
-                                        except:
-                                            # AI 실패시 휴리스틱 방식
-                                            complexity_score = min(1.0, (concept_length / 300 + description_length / 500 + tags_count / 10 + (0.2 if has_image else 0)) / 4)
-
-                                        # 복잡도에 따른 개념 검색 개수 자동 결정
-                                        if complexity_score < 0.3:
-                                            auto_concept_dup_n_results = 2  # 단순한 개념
-                                        elif complexity_score < 0.6:
-                                            auto_concept_dup_n_results = 3  # 보통 복잡도
-                                        elif complexity_score < 0.8:
-                                            auto_concept_dup_n_results = 4  # 복잡한 개념
-                                        else:
-                                            auto_concept_dup_n_results = 5  # 매우 복잡한 개념
-
-                                        st.info(f"[AI] 개념 복잡도 분석: {complexity_score:.2f} → 검색 개수: {auto_concept_dup_n_results}개")
-                                    else:
-                                        # 고급 엔진 없으면 휴리스틱 방식
-                                        concept_complexity = min(5, max(2, (concept_length // 100) + (description_length // 150) + tags_count))
-                                        auto_concept_dup_n_results = concept_complexity
-                                        st.info(f"[FALLBACK] 텍스트 기반 개념 자동 결정: {auto_concept_dup_n_results}개")
+                                    analyzed = gemini_service.analyze_concept(concept_data['description'])
+                                    concept_data.update({
+                                        'keywords': analyzed.get('keywords', []),
+                                        'category': analyzed.get('category', ''),
+                                        'detailed_explanation': analyzed.get('detailed_explanation', concept_data['description'])
+                                    })
+                                    st.success("[SUCCESS] AI 분석 완료!")
                                 except Exception as e:
-                                    st.warning(f"[WARNING] AI 개념 자동 결정 실패, 기본값 사용: {e}")
-                                    auto_concept_dup_n_results = 3
-                            else:
-                                auto_concept_dup_n_results = concept_dup_n_results
+                                    st.warning(f"[WARNING] AI 분석 실패: {e}")
 
-                            if concept_text:
-                                # medical_concepts 컬렉션에서 유사한 개념 검색
-                                collection_name = 'medical_concepts'
-                                try:
-                                    collection = multi_domain_rag_engine.chroma_client.get_or_create_collection(collection_name)
+                        # 제목 설정 (설명 또는 이미진 분석 결과 기반)
+                        if concept_data.get('description'):
+                            concept_data['title'] = concept_data['description'][:50] + '...' if len(concept_data['description']) > 50 else concept_data['description']
+                        elif concept_data.get('imageAnalysis') and concept_data['imageAnalysis'].get('main_objects'):
+                            # 이미진 주요 객체를 기반으로 제목 생성
+                            main_objects = concept_data['imageAnalysis']['main_objects'][:3]
+                            concept_data['title'] = f"의료 이미진: {', '.join(main_objects)}"
+                        else:
+                            concept_data['title'] = f"개념 {datetime.now().strftime('%Y-%m-%d %H:%M')}"
 
-                                    # 유사한 개념 검색
-                                    results = collection.query(
-                                        query_texts=[concept_text],
-                                        n_results=auto_concept_dup_n_results,
-                                        where={"type": "concept"}
-                                    )
-
-                                    # 검색 결과가 없더라도 [GENRE]/[SIMILARITY] 표시는 항상 수행
-                                    has_docs = bool(results.get('documents') and results['documents'][0])
-                                    if not has_docs:
+                        # ChromaDB에 저장 전 중복 체크
+                        from rag_engine_multi_domain import multi_domain_rag_engine
+                        with st.spinner("[CHECK] 중복 확인 중..."):
+                            try:
+            
+                                # 개념 텍스트 준비 (설명 또는 이미지 분석 결과)
+                                concept_text = concept_data.get('description', '')
+                                if not concept_text and concept_data.get('imageAnalysis'):
+                                    # 이미지만 있는 경우 이미지 분석 결과를 텍스트로 사용
+                                    img_analysis = concept_data['imageAnalysis']
+                                    if isinstance(img_analysis, dict):
+                                        concept_text = f"이미지: {', '.join(img_analysis.get('main_objects', []))} {', '.join(img_analysis.get('medical_tags', []))}"
+            
+                                is_duplicate = False
+                                max_similarity = 0.0
+            
+                                print(f"[DEBUG] 개념 중복 체크 시작")
+                                print(f"[DEBUG] 개념 텍스트: {concept_text[:50] if concept_text else 'None'}...")
+                                print(f"[DEBUG] 설명 텍스트: {description[:50] if description else 'None'}...")
+            
+                                # AI 자동 개념 검색 개수 결정 (auto_concept_search가 True인 경우)
+                                if concept_dup_n_results is None:  # AI 자동 결정 모드
+                                    # Gemini 2.5 Flash로 개념 복잡도 분석
+                                    try:
                                         if ADVANCED_DEDUP_AVAILABLE:
                                             from advanced_dedup.genre_classifier import medical_genre_classifier
-                                            _g, _conf = medical_genre_classifier.classify_text(concept_text)
-                                            with st.expander("[GENRE] 장르 분류 결과", expanded=True):
-                                                st.write(f"**장르**: {_g.value}")
-                                                st.write(f"**신뢰도**: {_conf:.3f}")
-                                                st.info("[INFO] 비교 대상이 없어 유사도 분석은 표시만 진행")
+                                            # 개념 텍스트 복잡도 분석
+                                            concept_length = len(concept_text) if concept_text else 0
+                                            description_length = len(description) if description else 0
+                                            tags_count = len(tags.split(',')) if tags else 0
+                                            has_image = bool(concept_data.get('hasImage'))
+            
+                                            # AI 기반 개념 복잡도 점수 (0.0 ~ 1.0)
+                                            complexity_prompt = f"다음 의료 개념의 복잡도를 0.0~1.0으로 평가하세요. 설명 길이, 태그 수, 이미지 포함 여부를 고려하여 점수만 반환하세요.\n\n개념: {concept_text[:200] if concept_text else description[:200]}\n설명 길이: {description_length}\n태그 수: {tags_count}\n이미지 포함: {has_image}"
+            
+                                            try:
+                                                complexity_response = medical_genre_classifier.gemini_client.generate_content(complexity_prompt)
+                                                complexity_score = float(complexity_response.text.strip())
+                                                complexity_score = max(0.0, min(1.0, complexity_score))  # 0.0~1.0 범위로 제한
+                                            except:
+                                                # AI 실패시 휴리스틱 방식
+                                                complexity_score = min(1.0, (concept_length / 300 + description_length / 500 + tags_count / 10 + (0.2 if has_image else 0)) / 4)
+            
+                                            # 복잡도에 따른 개념 검색 개수 자동 결정
+                                            if complexity_score < 0.3:
+                                                auto_concept_dup_n_results = 2  # 단순한 개념
+                                            elif complexity_score < 0.6:
+                                                auto_concept_dup_n_results = 3  # 보통 복잡도
+                                            elif complexity_score < 0.8:
+                                                auto_concept_dup_n_results = 4  # 복잡한 개념
+                                            else:
+                                                auto_concept_dup_n_results = 5  # 매우 복잡한 개념
+            
+                                            st.info(f"[AI] 개념 복잡도 분석: {complexity_score:.2f} → 검색 개수: {auto_concept_dup_n_results}개")
                                         else:
-                                            from deduplication_engine import deduplication_engine as _simple_engine
-                                            _tl = (concept_text or "").lower()
-                                            _scores = {g: sum(1 for kw in kws if kw.lower() in _tl) for g, kws in _simple_engine.genres.items()}
-                                            _bg = max(_scores, key=_scores.get) if _scores else 'medical'
-                                            _tot = sum(_scores.values()) or 1
-                                            _cf = (_scores.get(_bg, 0) / _tot)
-                                            with st.expander("[GENRE] 장르 분류 결과", expanded=True):
-                                                st.write(f"**장르**: {_bg}")
-                                                st.write(f"**신뢰도**: {_cf:.3f}")
-                                                st.info("[FALLBACK] 키워드 기반 분류")
-
-                                        with st.expander("[SIMILARITY] 유사도 분석 결과", expanded=True):
-                                            st.write("유사 항목 없음 (비교 대상 부족 또는 최초 저장)")
-
-                                    # 중복 확인
-                                    if results['documents'] and results['documents'][0]:
-                                        existing_docs = []
-                                        for i, doc_text in enumerate(results['documents'][0]):
-                                            if doc_text:
-                                                existing_docs.append({
-                                                    'id': results['ids'][0][i] if results['ids'] and results['ids'][0] else str(i),
-                                                    'text': doc_text,
-                                                    'meta': results['metadatas'][0][i] if results['metadatas'] and results['metadatas'][0] else {}
-                                                })
-
-                                        # 고급 중복 제거 엔진 사용 (개념용)
-                                        if ADVANCED_DEDUP_AVAILABLE:
-                                            st.info("[INFO] 고급 개념 중복 제거 엔진 사용 중 (장르 분류 + Cross-Encoder + 다양성 보존)")
-                                            print(f"[DEBUG] 고급 개념 엔진 호출 - 기존 문서 수: {len(existing_docs)}")
-                                            st.info(f"[DEBUG] 기존 개념 {len(existing_docs)}개와 비교 중...")
-
-                                            # 개념 장르 분류 먼저 표시
-                                            from advanced_dedup.genre_classifier import medical_genre_classifier
-                                            genre, genre_confidence = medical_genre_classifier.classify_text(concept_text)
-                                            with st.expander("[GENRE] 장르 분류 결과", expanded=True):
-                                                st.write(f"**장르**: {genre.value}")
-                                                st.write(f"**신뢰도**: {genre_confidence:.3f}")
-                                                if genre_confidence > 0.5:
-                                                    st.success(f"[AI] Gemini 2.5 Flash 분류 사용")
-                                                else:
-                                                    st.info(f"[FALLBACK] 키워드 기반 분류 사용")
-
-                                            # 새 개념을 포함한 전체 문서로 중복 검사
-                                            all_docs = existing_docs + [{
-                                                'id': 'new_concept',
-                                                'text': concept_text,
-                                                'domain': 'medical',
-                                                'type': 'concept'
-                                            }]
-
-                                            unique_ids, duplicate_pairs = use_advanced_deduplication(
-                                                all_docs,
-                                                domain='medical',
-                                                return_pairs=True,
-                                                apply_mmr=True,  # 개념에서는 MMR 활성화
-                                                target_diversity_ratio=0.7
-                                            )
-                                            print(f"[DEBUG] 고급 개념 엔진 결과 - 중복 쌍: {len(duplicate_pairs) if duplicate_pairs else 0}개")
-                                        else:
-                                            # 기존 방식 폴백
-                                            # [GENRE] 폴백 분류 표시 (고급 엔진 미사용 시)
-                                            from deduplication_engine import deduplication_engine as _simple_engine
-                                            _tl = (concept_text or "").lower()
-                                            _scores = {g: sum(1 for kw in kws if kw.lower() in _tl) for g, kws in _simple_engine.genres.items()}
-                                            _bg = max(_scores, key=_scores.get) if _scores else 'medical'
-                                            _tot = sum(_scores.values()) or 1
-                                            _cf = (_scores.get(_bg, 0) / _tot)
-                                            with st.expander("[GENRE] 장르 분류 결과", expanded=True):
-                                                st.write(f"**장르**: {_bg}")
-                                                st.write(f"**신뢰도**: {_cf:.3f}")
-                                                st.info("[FALLBACK] 키워드 기반 분류")
-                                            unique_ids, duplicate_pairs = deduplication_engine.deduplicate(
-                                                existing_docs + [{'id': 'new_concept', 'text': concept_text, 'domain': 'medical', 'type': 'concept'}],
-                                                domain='medical',
-                                                return_pairs=True
-                                            )
-
-                                        # 중복 확인 및 유사도 계산
-                                        if duplicate_pairs:
-                                            print(f"[DEBUG] 개념 중복 쌍 발견: {len(duplicate_pairs)}개")
-                                            st.info(f"[ANALYSIS] {len(duplicate_pairs)}개 개념 유사도 쌍 분석 중...")
-
-                                            concept_similarity_details = []
-                                            for pair in duplicate_pairs:
-                                                print(f"[DEBUG] 개념 쌍: {pair.doc1_id} <-> {pair.doc2_id}, 코사인: {pair.cos_sim:.3f}")
-                                                if pair.doc2_id == 'new_concept' or pair.doc1_id == 'new_concept':
-                                                    concept_similarity_details.append(f"코사인 유사도: {pair.cos_sim:.3f}")
-                                                    # 가장 높은 유사도 저장
-                                                    if pair.cos_sim > max_similarity:
-                                                        max_similarity = pair.cos_sim
-                                                        print(f"[DEBUG] 개념 최대 유사도 업데이트: {max_similarity:.3f}")
-
-                                            if concept_similarity_details:
-                                                with st.expander("[SIMILARITY] 유사도 분석 결과", expanded=True):
-                                                    for detail in concept_similarity_details[:5]:  # 상위 5개만 표시
-                                                        st.write(f"• {detail}")
-
-                                                    if max_similarity >= 0.85:
-                                                        is_duplicate = True
-                                                        st.error(f"[ERROR] 유사도 0.85 이상으로 중복 판정 (최대 코사인: {max_similarity:.3f})")
-                                        if not duplicate_pairs:
+                                            # 고급 엔진 없으면 휴리스틱 방식
+                                            concept_complexity = min(5, max(2, (concept_length // 100) + (description_length // 150) + tags_count))
+                                            auto_concept_dup_n_results = concept_complexity
+                                            st.info(f"[FALLBACK] 텍스트 기반 개념 자동 결정: {auto_concept_dup_n_results}개")
+                                    except Exception as e:
+                                        st.warning(f"[WARNING] AI 개념 자동 결정 실패, 기본값 사용: {e}")
+                                        auto_concept_dup_n_results = 3
+                                else:
+                                    auto_concept_dup_n_results = concept_dup_n_results
+            
+                                if concept_text:
+                                    # medical_concepts 컬렉션에서 유사한 개념 검색
+                                    collection_name = 'medical_concepts'
+                                    try:
+                                        collection = multi_domain_rag_engine.chroma_client.get_or_create_collection(collection_name)
+            
+                                        # 유사한 개념 검색
+                                        results = collection.query(
+                                            query_texts=[concept_text],
+                                            n_results=auto_concept_dup_n_results,
+                                            where={"type": "concept"}
+                                        )
+            
+                                        # 검색 결과가 없더라도 [GENRE]/[SIMILARITY] 표시는 항상 수행
+                                        has_docs = bool(results.get('documents') and results['documents'][0])
+                                        if not has_docs:
+                                            if ADVANCED_DEDUP_AVAILABLE:
+                                                from advanced_dedup.genre_classifier import medical_genre_classifier
+                                                _g, _conf = medical_genre_classifier.classify_text(concept_text)
+                                                with st.expander("[GENRE] 장르 분류 결과", expanded=True):
+                                                    st.write(f"**장르**: {_g.value}")
+                                                    st.write(f"**신뢰도**: {_conf:.3f}")
+                                                    st.info("[INFO] 비교 대상이 없어 유사도 분석은 표시만 진행")
+                                            else:
+                                                from deduplication_engine import deduplication_engine as _simple_engine
+                                                _tl = (concept_text or "").lower()
+                                                _scores = {g: sum(1 for kw in kws if kw.lower() in _tl) for g, kws in _simple_engine.genres.items()}
+                                                _bg = max(_scores, key=_scores.get) if _scores else 'medical'
+                                                _tot = sum(_scores.values()) or 1
+                                                _cf = (_scores.get(_bg, 0) / _tot)
+                                                with st.expander("[GENRE] 장르 분류 결과", expanded=True):
+                                                    st.write(f"**장르**: {_bg}")
+                                                    st.write(f"**신뢰도**: {_cf:.3f}")
+                                                    st.info("[FALLBACK] 키워드 기반 분류")
+            
                                             with st.expander("[SIMILARITY] 유사도 분석 결과", expanded=True):
                                                 st.write("유사 항목 없음 (비교 대상 부족 또는 최초 저장)")
-                                        if not is_duplicate and max_similarity > 0.5:
-                                            st.info(f"[INFO] 유사한 개념 발견 (코사인 유사도: {max_similarity:.3f}) - 저장은 가능합니다")
-                                        elif not is_duplicate and max_similarity > 0:
-                                            st.info(f"[INFO] 개념 저장 진행 (최대 유사도: {max_similarity:.3f})")
-                                        else:
-                                            print(f"[DEBUG] 개념 최종 유사도 상태 - max_similarity: {max_similarity}, is_duplicate: {is_duplicate}")
+            
+                                        # 중복 확인
+                                        if results['documents'] and results['documents'][0]:
+                                            existing_docs = []
+                                            for i, doc_text in enumerate(results['documents'][0]):
+                                                if doc_text:
+                                                    existing_docs.append({
+                                                        'id': results['ids'][0][i] if results['ids'] and results['ids'][0] else str(i),
+                                                        'text': doc_text,
+                                                        'meta': results['metadatas'][0][i] if results['metadatas'] and results['metadatas'][0] else {}
+                                                    })
+            
+                                            # 고급 중복 제거 엔진 사용 (개념용)
+                                            if ADVANCED_DEDUP_AVAILABLE:
+                                                st.info("[INFO] 고급 개념 중복 제거 엔진 사용 중 (장르 분류 + Cross-Encoder + 다양성 보존)")
+                                                print(f"[DEBUG] 고급 개념 엔진 호출 - 기존 문서 수: {len(existing_docs)}")
+                                                st.info(f"[DEBUG] 기존 개념 {len(existing_docs)}개와 비교 중...")
+            
+                                                # 개념 장르 분류 먼저 표시
+                                                from advanced_dedup.genre_classifier import medical_genre_classifier
+                                                genre, genre_confidence = medical_genre_classifier.classify_text(concept_text)
+                                                with st.expander("[GENRE] 장르 분류 결과", expanded=True):
+                                                    st.write(f"**장르**: {genre.value}")
+                                                    st.write(f"**신뢰도**: {genre_confidence:.3f}")
+                                                    if genre_confidence > 0.5:
+                                                        st.success(f"[AI] Gemini 2.5 Flash 분류 사용")
+                                                    else:
+                                                        st.info(f"[FALLBACK] 키워드 기반 분류 사용")
+            
+                                                # 새 개념을 포함한 전체 문서로 중복 검사
+                                                all_docs = existing_docs + [{
+                                                    'id': 'new_concept',
+                                                    'text': concept_text,
+                                                    'domain': 'medical',
+                                                    'type': 'concept'
+                                                }]
+            
+                                                unique_ids, duplicate_pairs = use_advanced_deduplication(
+                                                    all_docs,
+                                                    domain='medical',
+                                                    return_pairs=True,
+                                                    apply_mmr=True,  # 개념에서는 MMR 활성화
+                                                    target_diversity_ratio=0.7
+                                                )
+                                                print(f"[DEBUG] 고급 개념 엔진 결과 - 중복 쌍: {len(duplicate_pairs) if duplicate_pairs else 0}개")
+                                            else:
+                                                # 기존 방식 폴백
+                                                # [GENRE] 폴백 분류 표시 (고급 엔진 미사용 시)
+                                                from deduplication_engine import deduplication_engine as _simple_engine
+                                                _tl = (concept_text or "").lower()
+                                                _scores = {g: sum(1 for kw in kws if kw.lower() in _tl) for g, kws in _simple_engine.genres.items()}
+                                                _bg = max(_scores, key=_scores.get) if _scores else 'medical'
+                                                _tot = sum(_scores.values()) or 1
+                                                _cf = (_scores.get(_bg, 0) / _tot)
+                                                with st.expander("[GENRE] 장르 분류 결과", expanded=True):
+                                                    st.write(f"**장르**: {_bg}")
+                                                    st.write(f"**신뢰도**: {_cf:.3f}")
+                                                    st.info("[FALLBACK] 키워드 기반 분류")
+                                                unique_ids, duplicate_pairs = deduplication_engine.deduplicate(
+                                                    existing_docs + [{'id': 'new_concept', 'text': concept_text, 'domain': 'medical', 'type': 'concept'}],
+                                                    domain='medical',
+                                                    return_pairs=True
+                                                )
+            
+                                            # 중복 확인 및 유사도 계산
+                                            if duplicate_pairs:
+                                                print(f"[DEBUG] 개념 중복 쌍 발견: {len(duplicate_pairs)}개")
+                                                st.info(f"[ANALYSIS] {len(duplicate_pairs)}개 개념 유사도 쌍 분석 중...")
+            
+                                                concept_similarity_details = []
+                                                for pair in duplicate_pairs:
+                                                    print(f"[DEBUG] 개념 쌍: {pair.doc1_id} <-> {pair.doc2_id}, 코사인: {pair.cos_sim:.3f}")
+                                                    if pair.doc2_id == 'new_concept' or pair.doc1_id == 'new_concept':
+                                                        concept_similarity_details.append(f"코사인 유사도: {pair.cos_sim:.3f}")
+                                                        # 가장 높은 유사도 저장
+                                                        if pair.cos_sim > max_similarity:
+                                                            max_similarity = pair.cos_sim
+                                                            print(f"[DEBUG] 개념 최대 유사도 업데이트: {max_similarity:.3f}")
+            
+                                                if concept_similarity_details:
+                                                    with st.expander("[SIMILARITY] 유사도 분석 결과", expanded=True):
+                                                        for detail in concept_similarity_details[:5]:  # 상위 5개만 표시
+                                                            st.write(f"• {detail}")
+            
+                                                        if max_similarity >= 0.85:
+                                                            is_duplicate = True
+                                                            st.error(f"[ERROR] 유사도 0.85 이상으로 중복 판정 (최대 코사인: {max_similarity:.3f})")
+                                            if not duplicate_pairs:
+                                                with st.expander("[SIMILARITY] 유사도 분석 결과", expanded=True):
+                                                    st.write("유사 항목 없음 (비교 대상 부족 또는 최초 저장)")
+                                            if not is_duplicate and max_similarity > 0.5:
+                                                st.info(f"[INFO] 유사한 개념 발견 (코사인 유사도: {max_similarity:.3f}) - 저장은 가능합니다")
+                                            elif not is_duplicate and max_similarity > 0:
+                                                st.info(f"[INFO] 개념 저장 진행 (최대 유사도: {max_similarity:.3f})")
+                                            else:
+                                                print(f"[DEBUG] 개념 최종 유사도 상태 - max_similarity: {max_similarity}, is_duplicate: {is_duplicate}")
+            
+                                    except Exception as e:
+                                        # 컬렉션이 없으면 첫 번째 개념이므로 중복 체크 스킵
+                                        st.info("[INFO] 첫 번째 개념입니다")
+                                        pass
+            
+                                if is_duplicate:
+                                    # ChromaDB와 Firebase 모두 저장 차단
+                                    st.error("[BLOCKED] 유사도 0.85 이상으로 저장이 차단되었습니다")
+                                    return
+            
 
-                                except Exception as e:
-                                    # 컬렉션이 없으면 첫 번째 개념이므로 중복 체크 스킵
-                                    st.info("[INFO] 첫 번째 개념입니다")
-                                    pass
-
-                            if is_duplicate:
-                                # ChromaDB와 Firebase 모두 저장 차단
-                                st.error("[BLOCKED] 유사도 0.85 이상으로 저장이 차단되었습니다")
-                                return
-
-                        except Exception as e:
-                            st.warning(f"[WARNING] 중복 체크 실패: {e}")
-
-                    # ChromaDB에 저장
-                    with st.spinner("[SAVE] ChromaDB에 저장 중..."):
-                        try:
-                            st.info("[DEBUG] ChromaDB 저장 시작...")
-                            from rag_engine_multi_domain import multi_domain_rag_engine
-
-                            # 모든 개념은 medical_concepts 컬렉션에 저장
-                            collection_name = 'medical_concepts'
-                            st.info(f"[DEBUG] 컬렉션 접근: {collection_name}")
-
-                            collection = multi_domain_rag_engine.chroma_client.get_or_create_collection(collection_name)
-                            st.info(f"[DEBUG] 컬렉션 생성/접근 완료: {collection}")
-
-                            # 데이터 유효성 검사
-                            st.info(f"[DEBUG] 개념 데이터 검증: ID={concept_data.get('id')}, 제목={concept_data.get('title')}")
-                            st.info(f"[DEBUG] 이미지 정보: hasImage={concept_data.get('hasImage')}, imageUrl={bool(concept_data.get('imageUrl'))}")
-
-                            # Create full document with complete concept data including image info
-                            image_info = ""
-                            if concept_data.get('hasImage'):
-                                image_analysis = concept_data.get('imageAnalysis') or {}
-                                if isinstance(image_analysis, dict):
-                                    image_info = f"""
-이미지 포함: 예
-이미지 설명: {concept_data.get('imageDescription', '') or ''}
-이미지 주요 객체: {', '.join(image_analysis.get('main_objects', []) or [])}
-이미지 의료 태그: {', '.join(image_analysis.get('medical_tags', []) or [])}
-"""
+                            # ChromaDB에 저장
+                            except Exception as e:
+                                st.warning(f"[WARNING] 중복 체크 오류: {e}")
+                        with st.spinner("[SAVE] ChromaDB에 저장 중..."):
+                            try:
+                                st.info("[DEBUG] ChromaDB 저장 시작...")
+                                from rag_engine_multi_domain import multi_domain_rag_engine
+    
+                                # 모든 개념은 medical_concepts 컬렉션에 저장
+                                collection_name = 'medical_concepts'
+                                st.info(f"[DEBUG] 컬렉션 접근: {collection_name}")
+    
+                                collection = multi_domain_rag_engine.chroma_client.get_or_create_collection(collection_name)
+                                st.info(f"[DEBUG] 컬렉션 생성/접근 완료: {collection}")
+    
+                                # 데이터 유효성 검사
+                                st.info(f"[DEBUG] 개념 데이터 검증: ID={concept_data.get('id')}, 제목={concept_data.get('title')}")
+                                st.info(f"[DEBUG] 이미지 정보: hasImage={concept_data.get('hasImage')}, imageUrl={bool(concept_data.get('imageUrl'))}")
+    
+                                # Create full document with complete concept data including image info
+                                image_info = ""
+                                if concept_data.get('hasImage'):
+                                    image_analysis = concept_data.get('imageAnalysis') or {}
+                                    if isinstance(image_analysis, dict):
+                                        image_info = f"""
+    이미지 포함: 예
+    이미지 설명: {concept_data.get('imageDescription', '') or ''}
+    이미지 주요 객체: {', '.join(image_analysis.get('main_objects', []) or [])}
+    이미지 의료 태그: {', '.join(image_analysis.get('medical_tags', []) or [])}
+    """
+                                    else:
+                                        image_info = "\n이미지 포함: 예\n"
+    
+                                full_document = f"""
+    설명: {concept_data.get('description', '')}
+    상세 설명: {concept_data.get('detailed_explanation', '')}
+    카테고리: {concept_data.get('category', '')}
+    키워드: {', '.join(concept_data.get('keywords', []))}
+    태그: {', '.join(concept_data.get('tags', []))}
+    {image_info}
+    """
+    
+                                # Store complete metadata including image info (ChromaDB에서 None 값 방지)
+                                metadata = {
+                                    'title': concept_data.get('title', ''),
+                                    'description': concept_data.get('description', '')[:500] if concept_data.get('description') else '',
+                                    'category': concept_data.get('category', ''),
+                                    'keywords': ', '.join(concept_data.get('keywords', [])) or '',
+                                    'tags': ', '.join(concept_data.get('tags', [])) or '',
+                                    'createdBy': concept_data.get('createdBy', 'streamlit_user'),
+                                    'createdAt': concept_data.get('createdAt', ''),
+                                    'hasImage': bool(concept_data.get('hasImage', False)),
+                                    'imageUrl': concept_data.get('imageUrl', '') or '',
+                                    'type': 'concept'
+                                }
+    
+                                # Add image analysis metadata if available (None 값 방지)
+                                if concept_data.get('imageAnalysis') and isinstance(concept_data['imageAnalysis'], dict):
+                                    image_analysis = concept_data['imageAnalysis']
+                                    metadata.update({
+                                        'imageDescription': concept_data.get('imageDescription', '') or '',
+                                        'imageMainObjects': ', '.join(image_analysis.get('main_objects', []) or []) or '',
+                                        'imageMedicalTags': ', '.join(image_analysis.get('medical_tags', []) or []) or '',
+                                        'imageConfidence': float(image_analysis.get('confidence', 0.0) or 0.0)
+                                    })
+    
+                                collection.add(
+                                    ids=[concept_data['id']],
+                                    documents=[full_document],
+                                    metadatas=[metadata]
+                                )
+    
+                                # 유사도 정보와 함께 저장 완료 메시지
+                                if max_similarity > 0:
+                                    st.success(f"[SUCCESS] ChromaDB 저장 완료! (컬렉션: {collection_name}, 최대 유사도: {max_similarity:.3f})")
                                 else:
-                                    image_info = "\n이미지 포함: 예\n"
-
-                            full_document = f"""
-설명: {concept_data.get('description', '')}
-상세 설명: {concept_data.get('detailed_explanation', '')}
-카테고리: {concept_data.get('category', '')}
-키워드: {', '.join(concept_data.get('keywords', []))}
-태그: {', '.join(concept_data.get('tags', []))}
-{image_info}
-"""
-
-                            # Store complete metadata including image info (ChromaDB에서 None 값 방지)
-                            metadata = {
-                                'title': concept_data.get('title', ''),
-                                'description': concept_data.get('description', '')[:500] if concept_data.get('description') else '',
-                                'category': concept_data.get('category', ''),
-                                'keywords': ', '.join(concept_data.get('keywords', [])) or '',
-                                'tags': ', '.join(concept_data.get('tags', [])) or '',
-                                'createdBy': concept_data.get('createdBy', 'streamlit_user'),
-                                'createdAt': concept_data.get('createdAt', ''),
-                                'hasImage': bool(concept_data.get('hasImage', False)),
-                                'imageUrl': concept_data.get('imageUrl', '') or '',
-                                'type': 'concept'
-                            }
-
-                            # Add image analysis metadata if available (None 값 방지)
-                            if concept_data.get('imageAnalysis') and isinstance(concept_data['imageAnalysis'], dict):
-                                image_analysis = concept_data['imageAnalysis']
-                                metadata.update({
-                                    'imageDescription': concept_data.get('imageDescription', '') or '',
-                                    'imageMainObjects': ', '.join(image_analysis.get('main_objects', []) or []) or '',
-                                    'imageMedicalTags': ', '.join(image_analysis.get('medical_tags', []) or []) or '',
-                                    'imageConfidence': float(image_analysis.get('confidence', 0.0) or 0.0)
-                                })
-
-                            collection.add(
-                                ids=[concept_data['id']],
-                                documents=[full_document],
-                                metadatas=[metadata]
-                            )
-
-                            # 유사도 정보와 함께 저장 완료 메시지
-                            if max_similarity > 0:
-                                st.success(f"[SUCCESS] ChromaDB 저장 완료! (컬렉션: {collection_name}, 최대 유사도: {max_similarity:.3f})")
-                            else:
-                                st.success(f"[SUCCESS] ChromaDB 저장 완료! (컬렉션: {collection_name})")
-                        except Exception as e:
-                            st.error(f"[ERROR] ChromaDB 저장 실패: {e}")
-
-                    # JSON 파일로 로컬 저장 (Firebase 업로드 전에 저장)
-                    import json
-                    json_dir = "C:\\Users\\tkand\\Desktop\\development\\Hanoa\\Hanoa Hub Version 1\\saved_concepts"
-                    os.makedirs(json_dir, exist_ok=True)
-
-                    json_filename = f"concept_{concept_data['id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-                    json_path = os.path.join(json_dir, json_filename)
-
-                    # Save JSON before Firebase upload (to avoid sentinel issues)
-                    with open(json_path, 'w', encoding='utf-8') as f:
-                        json.dump(concept_data, f, ensure_ascii=False, indent=2, default=str)
-
-                    st.success(f"[SUCCESS] 개념 저장 완료!")
-                    st.info(f"[SAVE] JSON 파일 저장 위치: {json_path}")
-
-
-                    # Firebase에 업로드 (JSON 저장 후)
-                    with st.spinner("[UPLOAD] Firebase에 업로드 중..."):
-                        try:
-                            # Firebase 초기화 상태 확인
-                            st.info(f"[DEBUG] Firebase 초기화 상태: {firebase_service.initialized}")
-
-                            # 디버그 정보 출력
-                            st.info(f"[DEBUG] 개념 ID: {concept_data.get('id', 'N/A')}")
-                            st.info(f"[DEBUG] 업로드할 데이터 키: {list(concept_data.keys())}")
-
-                            upload_result = firebase_service.upload_concept(concept_data)
-
-                            # 업로드 결과 상세 출력
-                            st.info(f"[DEBUG] 업로드 결과: {upload_result}")
-
-                            if upload_result and upload_result.get('success'):
-                                # 유사도 정보와 함께 Firebase 업로드 성공 메시지
-                                if 'max_similarity' in locals() and max_similarity > 0:
-                                    st.success(f"[SUCCESS] Firebase 업로드 성공! (컬렉션: medical_concepts, 최대 유사도: {max_similarity:.3f})")
+                                    st.success(f"[SUCCESS] ChromaDB 저장 완료! (컬렉션: {collection_name})")
+                            except Exception as e:
+                                st.error(f"[ERROR] ChromaDB 저장 실패: {e}")
+    
+                        # JSON 파일로 로컬 저장 (Firebase 업로드 전에 저장)
+                        import json
+                        json_dir = "C:\\Users\\tkand\\Desktop\\development\\Hanoa\\Hanoa Hub Version 1\\saved_concepts"
+                        os.makedirs(json_dir, exist_ok=True)
+    
+                        json_filename = f"concept_{concept_data['id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                        json_path = os.path.join(json_dir, json_filename)
+    
+                        # Save JSON before Firebase upload (to avoid sentinel issues)
+                        with open(json_path, 'w', encoding='utf-8') as f:
+                            json.dump(concept_data, f, ensure_ascii=False, indent=2, default=str)
+    
+                        st.success(f"[SUCCESS] 개념 저장 완료!")
+                        st.info(f"[SAVE] JSON 파일 저장 위치: {json_path}")
+    
+    
+                        # Firebase에 업로드 (JSON 저장 후)
+                        with st.spinner("[UPLOAD] Firebase에 업로드 중..."):
+                            try:
+                                # Firebase 초기화 상태 확인
+                                st.info(f"[DEBUG] Firebase 초기화 상태: {firebase_service.initialized}")
+    
+                                # 디버그 정보 출력
+                                st.info(f"[DEBUG] 개념 ID: {concept_data.get('id', 'N/A')}")
+                                st.info(f"[DEBUG] 업로드할 데이터 키: {list(concept_data.keys())}")
+    
+                                upload_result = firebase_service.upload_concept(concept_data)
+    
+                                # 업로드 결과 상세 출력
+                                st.info(f"[DEBUG] 업로드 결과: {upload_result}")
+    
+                                if upload_result and upload_result.get('success'):
+                                    # 유사도 정보와 함께 Firebase 업로드 성공 메시지
+                                    if 'max_similarity' in locals() and max_similarity > 0:
+                                        st.success(f"[SUCCESS] Firebase 업로드 성공! (컬렉션: medical_concepts, 최대 유사도: {max_similarity:.3f})")
+                                    else:
+                                        st.success(f"[SUCCESS] Firebase 업로드 성공! (컬렉션: medical_concepts)")
+                                    st.success(f"[SUCCESS] 문서 ID: {upload_result.get('id', 'N/A')}")
                                 else:
-                                    st.success(f"[SUCCESS] Firebase 업로드 성공! (컬렉션: medical_concepts)")
-                                st.success(f"[SUCCESS] 문서 ID: {upload_result.get('id', 'N/A')}")
-                            else:
-                                st.warning(f"[WARNING] Firebase 업로드 실패: {upload_result.get('message', 'Unknown error')}")
-                        except Exception as e:
-                            st.error(f"[ERROR] Firebase 업로드 실패: {e}")
-                            import traceback
-                            st.error(f"[ERROR] 상세 오류: {traceback.format_exc()}")
+                                    st.warning(f"[WARNING] Firebase 업로드 실패: {upload_result.get('message', 'Unknown error')}")
+                            except Exception as e:
+                                st.error(f"[ERROR] Firebase 업로드 실패: {e}")
+                                import traceback
+                                st.error(f"[ERROR] 상세 오류: {traceback.format_exc()}")
+            # else:
+                # st.warning("[WARNING] 입력이 없거나 이미지를 업로드해주세요")
 
 
-                except Exception as e:
-                    st.error(f"[ERROR] 저장 실패: {e}")
-            else:
-                st.warning("[WARNING] 개념 설명을 입력하거나 이미지를 업로드해주세요")
-
+                    except Exception as e:
+                        st.error(f"[ERROR] 개념 저장 처리 중 오류: {e}")
 
 def ai_generation_tab():
     """AI batch question generation tab"""
