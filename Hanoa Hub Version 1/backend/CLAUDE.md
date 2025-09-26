@@ -31,6 +31,27 @@
 - `[JOBS]`: Jobs 관리
 - `[SYSTEM]`: 시스템 관리
 
+## 🔧 AI 분석 시스템
+
+### GPT-5 재시도 메커니즘 (2025-09-26 구현)
+- **GPT-5 Mini → GPT-5 에스컬레이션**
+- **GPT-5 실패 시**: 최대 3회 재시도
+- **모든 재시도 실패 시**: 저장 중단 (오류 상태로 저장하지 않음)
+- **사용자 피드백**: 명확한 오류 메시지와 재시도 가이드
+
+### 난이도 시스템
+- **표준**: "상", "중", "하" (한국어)
+- **기본값**: "중" (이전 "보통"에서 수정)
+- **AI 분석**: 간호사/의사 국가고시 기준
+
+### 파일 구조
+```
+analyzers/
+├── hierarchical_analyzer.py  # 계층적 AI 분석 (GPT-5 Mini → GPT-5)
+├── problem_analyzer.py      # 문제 분석 파이프라인
+└── image_hierarchical_analyzer.py  # 이미지 분석
+```
+
 ## Firebase 연동
 - **서비스 계정 키**: `firebase-service-account.json`
 - **프로젝트 ID**: hanoa-97393
@@ -59,8 +80,26 @@ python chroma_init.py init
 pip install -r requirements.txt
 ```
 
+## 최근 수정사항 (2025-09-26)
+
+### GPT-5 재시도 로직
+1. **hierarchical_analyzer.py**: GPT-5 최대 3회 재시도 구현
+2. **problem_analyzer.py**: 크리티컬 실패 시 저장 중단
+3. **app.py**: 사용자 피드백 개선, 저장 조건 추가
+
+### 난이도 매핑 수정
+- 모든 "보통" → "중" 변경
+- AI 프롬프트: "상|중|하" 일관성 유지
+- 기본값 통일: "중"
+
+### 오류 처리 개선
+- 크리티컬 분석 실패 시 ChromaDB, JSON, Firebase 저장 모두 중단
+- 명확한 오류 메시지와 해결 가이드 제공
+- GPT-5 API 상태 확인 권장
+
 ## 주의사항
 - **이모지 절대 사용 금지** - 화면 표시 오류 발생
 - Firebase 키 파일명 정확히 유지
 - Python 환경에서 UTF-8 인코딩 사용
 - Streamlit은 터미널 환경에서 실행됨
+- GPT-5 모델명 정확성 확인 필요
