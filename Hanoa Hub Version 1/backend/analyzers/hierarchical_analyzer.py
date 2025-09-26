@@ -41,8 +41,13 @@ class HierarchicalAnalyzer:
             # Step 2: 신뢰도 체크 및 GPT-5 검수
             if confidence_score < self.confidence_threshold:
                 print(f"[WARNING] 신뢰도 {confidence_score:.2%} - GPT-5 검수 진행")
-                final_result = self._enhance_with_gpt5(question_text, choices, correct_answer, mini_result)
-                verified_by = "gpt5_enhanced"
+                try:
+                    final_result = self._enhance_with_gpt5(question_text, choices, correct_answer, mini_result)
+                    verified_by = "gpt5_enhanced"
+                except Exception as gpt5_error:
+                    print(f"[CRITICAL] GPT-5 검수 최종 실패: {gpt5_error}")
+                    # GPT-5 실패 시 전체 분석 실패로 처리 (오류 상태로 저장하지 않음)
+                    raise Exception(f"Problem analysis failed: GPT-5 enhancement failed after retries - {gpt5_error}")
             else:
                 print(f"[SUCCESS] 신뢰도 {confidence_score:.2%} - GPT-5-mini 결과 승인")
                 final_result = mini_result
@@ -52,7 +57,7 @@ class HierarchicalAnalyzer:
             return {
                 "concepts": final_result.get("concepts", []),
                 "keywords": final_result.get("keywords", []),
-                "difficulty": final_result.get("difficulty", "보통"),
+                "difficulty": final_result.get("difficulty", "중"),
                 "confidence_score": confidence_score,
                 "verified_by": verified_by,
                 "processed_at": datetime.now().isoformat()
@@ -63,7 +68,7 @@ class HierarchicalAnalyzer:
             return {
                 "concepts": [],
                 "keywords": [],
-                "difficulty": "보통",
+                "difficulty": "중",
                 "confidence_score": 0.0,
                 "verified_by": "error",
                 "error": str(e)
@@ -124,7 +129,7 @@ class HierarchicalAnalyzer:
             return {
                 "concepts": ["분석실패"],
                 "keywords": ["오류"],
-                "difficulty": "보통",
+                "difficulty": "중",
                 "reasoning": f"분석 실패: {str(e)}"
             }
 
@@ -167,7 +172,7 @@ class HierarchicalAnalyzer:
         return sum(scores)
 
     def _enhance_with_gpt5(self, question_text: str, choices: List[str], correct_answer: str, mini_result: Dict[str, Any]) -> Dict[str, Any]:
-        """GPT-5로 검수 및 개선"""
+        """GPT-5로 검수 및 개선 (실패 시 재시도)"""
 
         prompt = f"""
 다음 간호학/의학 문제의 GPT-5-mini 분석 결과를 검수하고 개선해주세요:
@@ -196,33 +201,51 @@ GPT-5-mini 분석 결과:
 4. 난이도 분류의 적절성
 """
 
-        try:
-            response = openai.chat.completions.create(
-                model=self.gpt5_model,
-                messages=[
-                    {"role": "system", "content": "당신은 의학/간호학 교육 전문가입니다. GPT-5-mini 결과를 검토하고 전문적 관점에서 개선합니다."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_completion_tokens=1200  # GPT-5 uses max_completion_tokens
-                # temperature parameter removed - GPT-5 only supports default value
-            )
+        # GPT-5 재시도 로직 (최대 3회)
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                if attempt > 0:
+                    print(f"[RETRY] GPT-5 분석 재시도 {attempt}/{max_retries-1}")
 
-            # API 사용량 추적
-            if api_tracker:
-                input_tokens = response.usage.prompt_tokens if hasattr(response, 'usage') else len(prompt) // 4
-                output_tokens = response.usage.completion_tokens if hasattr(response, 'usage') else 1200
-                api_tracker.track_usage(self.gpt5_model, input_tokens, output_tokens)
+                response = openai.chat.completions.create(
+                    model=self.gpt5_model,
+                    messages=[
+                        {"role": "system", "content": "당신은 의학/간호학 교육 전문가입니다. GPT-5-mini 결과를 검토하고 전문적 관점에서 개선합니다."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    max_completion_tokens=1200  # GPT-5 uses max_completion_tokens
+                    # temperature parameter removed - GPT-5 only supports default value
+                )
 
-            content = response.choices[0].message.content.strip()
-            if content.startswith("```json"):
-                content = content.replace("```json", "").replace("```", "").strip()
+                # API 사용량 추적
+                if api_tracker:
+                    input_tokens = response.usage.prompt_tokens if hasattr(response, 'usage') else len(prompt) // 4
+                    output_tokens = response.usage.completion_tokens if hasattr(response, 'usage') else 1200
+                    api_tracker.track_usage(self.gpt5_model, input_tokens, output_tokens)
 
-            enhanced_result = json.loads(content)
-            return enhanced_result
+                content = response.choices[0].message.content.strip()
+                if content.startswith("```json"):
+                    content = content.replace("```json", "").replace("```", "").strip()
 
-        except Exception as e:
-            print(f"[ERROR] GPT-5 검수 실패, mini 결과 사용: {e}")
-            return mini_result
+                enhanced_result = json.loads(content)
+
+                # 성공한 경우 결과 반환
+                if attempt > 0:
+                    print(f"[SUCCESS] GPT-5 재시도 {attempt}회차에서 성공")
+                return enhanced_result
+
+            except Exception as e:
+                print(f"[ERROR] GPT-5 시도 {attempt+1}회차 실패: {e}")
+
+                # 마지막 시도였다면 에러와 함께 처리 중단
+                if attempt == max_retries - 1:
+                    print(f"[CRITICAL] GPT-5 최대 재시도 횟수 {max_retries}회 도달. 분석 실패로 처리.")
+                    # 에러가 있는 상태로 저장하지 않고 예외를 다시 발생시킴
+                    raise Exception(f"GPT-5 analysis failed after {max_retries} attempts: {e}")
+
+                # 다음 시도를 위해 계속 진행
+                continue
 
 # 전역 인스턴스
 hierarchical_analyzer = HierarchicalAnalyzer()

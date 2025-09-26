@@ -349,27 +349,8 @@ def question_input_form():
                             )
 
                             # 검색 결과가 없더라도 [GENRE]/[SIMILARITY] 표시는 항상 수행
-                            has_docs = bool(results.get('documents') and results['documents'][0])
+                            has_docs = bool(results.get('documents') and results['documents'] and len(results['documents']) > 0 and results['documents'][0] and len(results['documents'][0]) > 0)
                             if not has_docs:
-                                if ADVANCED_DEDUP_AVAILABLE:
-                                    from advanced_dedup.genre_classifier import medical_genre_classifier
-                                    _g, _conf = medical_genre_classifier.classify_text(question_text)
-                                    with st.expander("[GENRE] 장르 분류 결과", expanded=True):
-                                        st.write(f"**장르**: {_g.value}")
-                                        st.write(f"**신뢰도**: {_conf:.3f}")
-                                        st.info("[INFO] 비교 대상이 없어 유사도 분석은 표시만 진행")
-                                else:
-                                    from deduplication_engine import deduplication_engine as _simple_engine
-                                    _tl = (question_text or "").lower()
-                                    _scores = {g: sum(1 for kw in kws if kw.lower() in _tl) for g, kws in _simple_engine.genres.items()}
-                                    _bg = max(_scores, key=_scores.get) if _scores else 'medical'
-                                    _tot = sum(_scores.values()) or 1
-                                    _cf = (_scores.get(_bg, 0) / _tot)
-                                    with st.expander("[GENRE] 장르 분류 결과", expanded=True):
-                                        st.write(f"**장르**: {_bg}")
-                                        st.write(f"**신뢰도**: {_cf:.3f}")
-                                        st.info("[FALLBACK] 키워드 기반 분류")
-
                                 with st.expander("[SIMILARITY] 유사도 분석 결과", expanded=True):
                                     st.write("유사 항목 없음 (비교 대상 부족 또는 최초 저장)")
 
@@ -387,20 +368,9 @@ def question_input_form():
 
                                 # 고급 중복 제거 엔진 사용 (가능한 경우)
                                 if ADVANCED_DEDUP_AVAILABLE:
-                                    st.info("[INFO] 고급 중복 제거 엔진 사용 중 (장르 분류 + 동적 임계값 + Cross-Encoder)")
+                                    st.info("[INFO] 고급 중복 제거 엔진 사용 중 (동적 임계값 + Cross-Encoder)")
                                     print(f"[DEBUG] 고급 엔진 호출 - 기존 문서 수: {len(existing_docs)}")
                                     st.info(f"[DEBUG] 기존 문제 {len(existing_docs)}개와 비교 중...")
-
-                                    # 장르 분류 먼저 표시
-                                    from advanced_dedup.genre_classifier import medical_genre_classifier
-                                    genre, genre_confidence = medical_genre_classifier.classify_text(question_text)
-                                    with st.expander("[GENRE] 장르 분류 결과", expanded=True):
-                                        st.write(f"**장르**: {genre.value}")
-                                        st.write(f"**신뢰도**: {genre_confidence:.3f}")
-                                        if genre_confidence > 0.5:
-                                            st.success(f"[AI] Gemini 2.5 Flash 분류 사용")
-                                        else:
-                                            st.info(f"[FALLBACK] 키워드 기반 분류 사용")
 
                                     # 새 문제를 포함한 전체 문서로 중복 검사
                                     all_docs = existing_docs + [{
@@ -420,17 +390,7 @@ def question_input_form():
                                     print(f"[DEBUG] 고급 엔진 결과 - 중복 쌍: {len(duplicate_pairs) if duplicate_pairs else 0}개")
                                 else:
                                     # 기존 방식 폴백
-                                    # [GENRE] 폴백 분류 표시 (고급 엔진 미사용 시)
-                                    from deduplication_engine import deduplication_engine as _simple_engine
-                                    _tl = (question_text or "").lower()
-                                    _scores = {g: sum(1 for kw in kws if kw.lower() in _tl) for g, kws in _simple_engine.genres.items()}
-                                    _bg = max(_scores, key=_scores.get) if _scores else 'medical'
-                                    _tot = sum(_scores.values()) or 1
-                                    _cf = (_scores.get(_bg, 0) / _tot)
-                                    with st.expander("[GENRE] 장르 분류 결과", expanded=True):
-                                        st.write(f"**장르**: {_bg}")
-                                        st.write(f"**신뢰도**: {_cf:.3f}")
-                                        st.info("[FALLBACK] 키워드 기반 분류")
+                                    st.info("[INFO] 기본 중복 제거 엔진 사용")
                                     unique_ids, duplicate_pairs = deduplication_engine.deduplicate(
                                         existing_docs + [{'id': 'new_question', 'text': question_text, 'domain': 'medical', 'type': 'problem'}],
                                         domain='medical',
@@ -644,6 +604,7 @@ def question_input_form():
                                 question_data['imageUrl'] = url_list[0]  # First URL as main
 
                         # AI 분석 자동 실행
+                        critical_analysis_failure = False  # 초기화
                         with st.spinner("[ANALYSIS] AI가 문제를 분석 중..."):
                             try:
                                 # ProblemAnalyzer의 process_problem 메서드 호출
@@ -659,7 +620,7 @@ def question_input_form():
                                 question_data['analysis'] = {
                                     'concepts': analysis_result.get('concepts', []),
                                     'keywords': analysis_result.get('keywords', []),
-                                    'difficulty': analysis_result.get('difficulty', '보통'),
+                                    'difficulty': analysis_result.get('difficulty', '중'),
                                     'confidence_score': 0.85,
                                     'verified_by': 'hierarchical_analyzer',
                                     'processed_at': datetime.now().isoformat()
@@ -675,22 +636,33 @@ def question_input_form():
                                         st.write("**개념:**", ', '.join(analysis_result.get('concepts', [])))
                                         st.write("**키워드:**", ', '.join(analysis_result.get('keywords', [])))
                                     with col2:
-                                        st.write("**난이도:**", analysis_result.get('difficulty', '보통'))
+                                        st.write("**난이도:**", analysis_result.get('difficulty', '중'))
                                         st.write("**신뢰도:**", f"{0.85:.1%}")
                             except Exception as e:
-                                st.error(f"[ERROR] AI 분석 중 오류: {e}")
-                                question_data['status'] = 'analysis_failed'
+                                # GPT-5 재시도 실패 시 저장 중단
+                                if "Problem analysis critically failed" in str(e):
+                                    st.error(f"[CRITICAL] GPT-5 분석이 재시도 후에도 실패했습니다. 문제 저장을 중단합니다.")
+                                    st.error(f"상세 오류: {e}")
+                                    st.warning("GPT-5 API 상태를 확인하고 다시 시도해주세요.")
+                                    question_data['status'] = 'critical_analysis_failed'
+                                    # analysis_failed와 달리 저장을 진행하지 않도록 플래그 설정
+                                    critical_analysis_failure = True
+                                else:
+                                    st.error(f"[ERROR] AI 분석 중 오류: {e}")
+                                    question_data['status'] = 'analysis_failed'
+                                    critical_analysis_failure = False
 
-                        # ChromaDB에 자동 저장
-                        with st.spinner("[SAVE] ChromaDB에 저장 중..."):
-                            try:
-                                from rag_engine_multi_domain import multi_domain_rag_engine
+                        # ChromaDB에 자동 저장 (critical failure가 아닌 경우에만)
+                        if not critical_analysis_failure:
+                            with st.spinner("[SAVE] ChromaDB에 저장 중..."):
+                                try:
+                                    from rag_engine_multi_domain import multi_domain_rag_engine
 
-                                # nursing_questions 컬렉션에 추가
-                                collection = multi_domain_rag_engine.chroma_client.get_or_create_collection('nursing_questions')
+                                    # nursing_questions 컬렉션에 추가
+                                    collection = multi_domain_rag_engine.chroma_client.get_or_create_collection('nursing_questions')
 
-                                # Create full document with all question data
-                                full_document = f"""
+                                    # Create full document with all question data
+                                    full_document = f"""
 문제: {question_data['questionText']}
 선택지:
 1. {question_data.get('choices', ['', '', '', '', ''])[0]}
@@ -702,103 +674,107 @@ def question_input_form():
 해설: {question_data.get('explanation', '')}
 """
 
-                                # Store complete metadata including choices
-                                collection.add(
-                                ids=[question_data['id']],
-                                documents=[full_document],
-                                metadatas=[{
-                                    'questionText': question_data.get('questionText', ''),
-                                    'choice1': question_data.get('choices', ['', '', '', '', ''])[0] or '',
-                                    'choice2': question_data.get('choices', ['', '', '', '', ''])[1] or '',
-                                    'choice3': question_data.get('choices', ['', '', '', '', ''])[2] or '',
-                                    'choice4': question_data.get('choices', ['', '', '', '', ''])[3] or '',
-                                    'choice5': question_data.get('choices', ['', '', '', '', ''])[4] or '',
-                                    'correctAnswer': question_data.get('correctAnswer', '') or '',
-                                    'explanation': question_data.get('explanation', '') or '',
-                                    'subject': question_data.get('subject', '간호학') or '간호학',
-                                    'difficulty': question_data.get('analysis', {}).get('difficulty', '보통') or '보통',
-                                    'tags': ', '.join(question_data.get('analysis', {}).get('keywords', [])) or '',
-                                    'createdBy': 'streamlit_user',
-                                    'createdAt': question_data.get('createdAt', '') or '',
-                                    'hasImage': bool(question_data.get('hasImage', False)),
-                                    'type': 'problem'
-                                }]
-                                )
+                                    # Store complete metadata including choices
+                                    collection.add(
+                                        ids=[question_data['id']],
+                                        documents=[full_document],
+                                        metadatas=[{
+                                            'questionText': question_data.get('questionText', ''),
+                                            'choice1': question_data.get('choices', ['', '', '', '', ''])[0] or '',
+                                            'choice2': question_data.get('choices', ['', '', '', '', ''])[1] or '',
+                                            'choice3': question_data.get('choices', ['', '', '', '', ''])[2] or '',
+                                            'choice4': question_data.get('choices', ['', '', '', '', ''])[3] or '',
+                                            'choice5': question_data.get('choices', ['', '', '', '', ''])[4] or '',
+                                            'correctAnswer': question_data.get('correctAnswer', '') or '',
+                                            'explanation': question_data.get('explanation', '') or '',
+                                            'subject': question_data.get('subject', '간호학') or '간호학',
+                                            'difficulty': question_data.get('analysis', {}).get('difficulty', '중') or '중',
+                                            'tags': ', '.join(question_data.get('analysis', {}).get('keywords', [])) or '',
+                                            'createdBy': 'streamlit_user',
+                                            'createdAt': question_data.get('createdAt', '') or '',
+                                            'hasImage': bool(question_data.get('hasImage', False)),
+                                            'type': 'problem'
+                                        }]
+                                    )
 
-                                # 유사도 정보와 함께 저장 완료 메시지
-                                if 'max_similarity' in locals() and max_similarity > 0:
-                                    st.success(f"[SUCCESS] ChromaDB 저장 완료! (최대 유사도: {max_similarity:.3f})")
-                                else:
-                                    st.success(f"[SUCCESS] ChromaDB 저장 완료!")
-                            except Exception as e:
-                                st.error(f"[ERROR] ChromaDB 저장 실패: {e}")
-
-
-                        # Save to JSON first (before Firebase modifies the data)
-                        json_dir = Path("C:\\Users\\tkand\\Desktop\\development\\Hanoa\\Hanoa Hub Version 1\\saved_questions")
-                        json_dir.mkdir(parents=True, exist_ok=True)
-                        json_filename = f"question_{question_data['id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-                        json_path = json_dir / json_filename
-
-                        with open(json_path, 'w', encoding='utf-8') as f:
-                            # 일부 객체(firebase SERVER_TIMESTAMP 등) 직렬화 안전 처리
-                            json.dump(question_data, f, ensure_ascii=False, indent=2, default=str)
-
-                        # Also save to Jobs/completed folder for compatibility
-                        completed_path = Path("Jobs/completed")
-                        completed_path.mkdir(parents=True, exist_ok=True)
-                        completed_file = completed_path / f"problem_{question_data['id']}.json"
-                        with open(completed_file, 'w', encoding='utf-8') as f:
-                            json.dump(question_data, f, ensure_ascii=False, indent=2, default=str)
-
-                        # Firebase에 자동 업로드 (분야에 따라 다른 컬렉션 사용) - JSON 저장 후
-                        with st.spinner("[UPLOAD] Firebase에 업로드 중..."):
-                            try:
-                                problem_data = {
-                                'id': question_data.get('id'),
-                                'questionText': question_data['questionText'],
-                                'choices': question_data.get('choices', []),
-                                'correctAnswer': question_data.get('correctAnswer', ''),
-                                'answer': question_data.get('answer'),
-                                'subject': question_data.get('subject', '간호학'),
-                                'difficulty': question_data.get('analysis', {}).get('difficulty', '보통'),
-                                'tags': question_data.get('analysis', {}).get('keywords', []),
-                                'concepts': question_data.get('analysis', {}).get('concepts', []),
-                                'explanation': question_data.get('explanation', ''),
-                                'hasImage': question_data.get('hasImage', False),
-                                'imageUrl': question_data.get('imageUrl'),
-                                'imageUrls': question_data.get('imageUrls', []),
-                                'imageAnalysis': question_data.get('imageAnalysis'),
-                                'createdAt': question_data.get('createdAt'),
-                                'createdBy': question_data.get('createdBy', 'streamlit_user'),
-                                'status': 'completed'
-                            }
-
-                                # 분야에 따라 다른 업로드 메서드 사용
-                                if field == "간호":
-                                    upload_result = firebase_service.upload_problem(problem_data)
-                                else:  # 의학
-                                    upload_result = firebase_service.upload_medical_problem(problem_data)
-
-                                if upload_result and upload_result.get('success', False):
-                                    # 유사도 정보와 함께 Firebase 업로드 성공 메시지
+                                    # 유사도 정보와 함께 저장 완료 메시지
                                     if 'max_similarity' in locals() and max_similarity > 0:
-                                        st.success(f"[SUCCESS] Firebase 업로드 성공! (분야: {field}, 최대 유사도: {max_similarity:.3f})")
+                                        st.success(f"[SUCCESS] ChromaDB 저장 완료! (최대 유사도: {max_similarity:.3f})")
                                     else:
-                                        st.success(f"[SUCCESS] Firebase 업로드 성공! (분야: {field})")
-                                else:
-                                    st.warning("[WARNING] Firebase 업로드 부분 실패")
-                            except Exception as e:
-                                st.error(f"[ERROR] Firebase 업로드 실패: {e}")
+                                        st.success(f"[SUCCESS] ChromaDB 저장 완료!")
+                                except Exception as e:
+                                    st.error(f"[ERROR] ChromaDB 저장 실패: {e}")
 
-                        # RAG(ChromaDB)에 질문 등록
-                        try:
-                            rag_engine.add_question(question_data)
-                        except Exception:
-                            pass
 
-                        st.success(f"[SUCCESS] 문제 저장 완료!")
-                        st.info(f"[SAVE] JSON 파일 저장 위치: {json_path}")
+                        # Save to JSON first (before Firebase modifies the data) - only if analysis succeeded
+                        if not critical_analysis_failure:
+                            json_dir = Path("C:\\Users\\tkand\\Desktop\\development\\Hanoa\\Hanoa Hub Version 1\\saved_questions")
+                            json_dir.mkdir(parents=True, exist_ok=True)
+                            json_filename = f"question_{question_data['id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                            json_path = json_dir / json_filename
+
+                            with open(json_path, 'w', encoding='utf-8') as f:
+                                # 일부 객체(firebase SERVER_TIMESTAMP 등) 직렬화 안전 처리
+                                json.dump(question_data, f, ensure_ascii=False, indent=2, default=str)
+
+                            # Also save to Jobs/completed folder for compatibility
+                            completed_path = Path("Jobs/completed")
+                            completed_path.mkdir(parents=True, exist_ok=True)
+                            completed_file = completed_path / f"problem_{question_data['id']}.json"
+                            with open(completed_file, 'w', encoding='utf-8') as f:
+                                json.dump(question_data, f, ensure_ascii=False, indent=2, default=str)
+
+                            # Firebase에 자동 업로드 (분야에 따라 다른 컬렉션 사용) - JSON 저장 후
+                            with st.spinner("[UPLOAD] Firebase에 업로드 중..."):
+                                try:
+                                    problem_data = {
+                                    'id': question_data.get('id'),
+                                    'questionText': question_data['questionText'],
+                                    'choices': question_data.get('choices', []),
+                                    'correctAnswer': question_data.get('correctAnswer', ''),
+                                    'answer': question_data.get('answer'),
+                                    'subject': question_data.get('subject', '간호학'),
+                                    'difficulty': question_data.get('analysis', {}).get('difficulty', '중'),
+                                    'tags': question_data.get('analysis', {}).get('keywords', []),
+                                    'concepts': question_data.get('analysis', {}).get('concepts', []),
+                                    'explanation': question_data.get('explanation', ''),
+                                    'hasImage': question_data.get('hasImage', False),
+                                    'imageUrl': question_data.get('imageUrl'),
+                                    'imageUrls': question_data.get('imageUrls', []),
+                                    'imageAnalysis': question_data.get('imageAnalysis'),
+                                    'createdAt': question_data.get('createdAt'),
+                                    'createdBy': question_data.get('createdBy', 'streamlit_user'),
+                                    'status': 'completed'
+                                }
+
+                                    # 분야에 따라 다른 업로드 메서드 사용
+                                    if field == "간호":
+                                        upload_result = firebase_service.upload_problem(problem_data)
+                                    else:  # 의학
+                                        upload_result = firebase_service.upload_medical_problem(problem_data)
+
+                                    if upload_result and upload_result.get('success', False):
+                                        # 유사도 정보와 함께 Firebase 업로드 성공 메시지
+                                        if 'max_similarity' in locals() and max_similarity > 0:
+                                            st.success(f"[SUCCESS] Firebase 업로드 성공! (분야: {field}, 최대 유사도: {max_similarity:.3f})")
+                                        else:
+                                            st.success(f"[SUCCESS] Firebase 업로드 성공! (분야: {field})")
+                                    else:
+                                        st.warning("[WARNING] Firebase 업로드 부분 실패")
+                                except Exception as e:
+                                    st.error(f"[ERROR] Firebase 업로드 실패: {e}")
+
+                            # RAG(ChromaDB)에 질문 등록
+                            try:
+                                rag_engine.add_question(question_data)
+                            except Exception:
+                                pass
+
+                            st.success(f"[SUCCESS] 문제 저장 완료!")
+                            st.info(f"[SAVE] JSON 파일 저장 위치: {json_path}")
+                        else:
+                            st.error("[CRITICAL] GPT-5 분석 실패로 인해 문제가 저장되지 않았습니다.")
+                            st.info("GPT-5 API 상태를 확인한 후 다시 시도해주세요.")
 
                         # Display image count if images were saved
                         if question_data.get('imageUrls'):
@@ -952,32 +928,109 @@ def concept_input_form():
                                 )
 
                                 # 검색 결과가 없더라도 [GENRE]/[SIMILARITY] 표시는 항상 수행
-                                has_docs = bool(results.get('documents') and results['documents'][0])
+                                has_docs = bool(results.get('documents') and results['documents'] and len(results['documents']) > 0 and results['documents'][0] and len(results['documents'][0]) > 0)
                                 if not has_docs:
-                                    if ADVANCED_DEDUP_AVAILABLE:
-                                        from advanced_dedup.genre_classifier import medical_genre_classifier
-                                        _g, _conf = medical_genre_classifier.classify_text(concept_text)
-                                        with st.expander("[GENRE] 장르 분류 결과", expanded=True):
-                                            st.write(f"**장르**: {_g.value}")
-                                            st.write(f"**신뢰도**: {_conf:.3f}")
-                                            st.info("[INFO] 비교 대상이 없어 유사도 분석은 표시만 진행")
-                                    else:
-                                        from deduplication_engine import deduplication_engine as _simple_engine
-                                        _tl = (concept_text or "").lower()
-                                        _scores = {g: sum(1 for kw in kws if kw.lower() in _tl) for g, kws in _simple_engine.genres.items()}
-                                        _bg = max(_scores, key=_scores.get) if _scores else 'medical'
-                                        _tot = sum(_scores.values()) or 1
-                                        _cf = (_scores.get(_bg, 0) / _tot)
-                                        with st.expander("[GENRE] 장르 분류 결과", expanded=True):
-                                            st.write(f"**장르**: {_bg}")
-                                            st.write(f"**신뢰도**: {_cf:.3f}")
-                                            st.info("[FALLBACK] 키워드 기반 분류")
-
                                     with st.expander("[SIMILARITY] 유사도 분석 결과", expanded=True):
                                         st.write("유사 항목 없음 (비교 대상 부족 또는 최초 저장)")
 
-                                # 중복 검사 로직 (기존 코드와 동일)
-                                # ... (여기에 기존 중복 검사 코드가 들어감)
+                                # 고급 중복 제거 파이프라인 사용
+                                if results['documents'] and results['documents'][0]:
+                                    # 문서 형태로 준비
+                                    existing_docs = []
+                                    for i, doc_text in enumerate(results['documents'][0]):
+                                        if doc_text:  # None이 아닌 경우만
+                                            existing_docs.append({
+                                                'id': results['ids'][0][i] if results['ids'] and results['ids'][0] else str(i),
+                                                'text': doc_text,
+                                                'meta': results['metadatas'][0][i] if results['metadatas'] and results['metadatas'][0] else {}
+                                            })
+
+                                    # 고급 중복 제거 엔진 사용 (가능한 경우)
+                                    if ADVANCED_DEDUP_AVAILABLE:
+                                        st.info("[INFO] 고급 중복 제거 엔진 사용 중 (동적 임계값 + Cross-Encoder)")
+                                        print(f"[DEBUG] 고급 엔진 호출 - 기존 문서 수: {len(existing_docs)}")
+                                        st.info(f"[DEBUG] 기존 개념 {len(existing_docs)}개와 비교 중...")
+
+                                        # 새 개념을 포함한 전체 문서로 중복 검사
+                                        all_docs = existing_docs + [{
+                                            'id': 'new_concept',
+                                            'text': concept_text,
+                                            'domain': 'medical',
+                                            'type': 'concept'
+                                        }]
+
+                                        unique_ids, duplicate_pairs = use_advanced_deduplication(
+                                            all_docs,
+                                            domain='medical',
+                                            return_pairs=True,
+                                            apply_mmr=False,  # 개념 저장 시에는 MMR 비활성화
+                                            target_diversity_ratio=0.8
+                                        )
+                                        print(f"[DEBUG] 고급 엔진 결과 - 중복 쌍: {len(duplicate_pairs) if duplicate_pairs else 0}개")
+                                    else:
+                                        # 기존 방식 폴백
+                                        st.info("[INFO] 기본 중복 제거 엔진 사용")
+                                        unique_ids, duplicate_pairs = deduplication_engine.deduplicate(
+                                            existing_docs + [{'id': 'new_concept', 'text': concept_text, 'domain': 'medical', 'type': 'concept'}],
+                                            domain='medical',
+                                            return_pairs=True
+                                        )
+
+                                    # new_concept이 중복으로 판정되었는지 확인
+                                    is_duplicate = False
+                                    max_similarity = 0.0
+                                    similar_text = ""
+
+                                    print(f"[DEBUG] 중복 체크 시작 - 기존 문서 개수: {len(existing_docs)}")
+                                    print(f"[DEBUG] 새 개념 텍스트: {concept_text[:50]}...")
+
+                                    with st.expander("[DEBUG] 중복 분석 과정", expanded=False):
+                                        st.write(f"**분석 텍스트**: {concept_text[:100]}...")
+                                        st.write(f"**기존 문서 개수**: {len(existing_docs)}개")
+
+                                    if duplicate_pairs:
+                                        print(f"[DEBUG] 중복 쌍 발견: {len(duplicate_pairs)}개")
+                                        st.info(f"[ANALYSIS] {len(duplicate_pairs)}개 유사도 쌍 분석 중...")
+
+                                        similarity_details = []
+                                        for pair in duplicate_pairs:
+                                            print(f"[DEBUG] 쌍: {pair.doc1_id} <-> {pair.doc2_id}, 코사인: {pair.cos_sim:.3f}")
+                                            if pair.doc2_id == 'new_concept' or pair.doc1_id == 'new_concept':
+                                                similarity_details.append(f"코사인 유사도: {pair.cos_sim:.3f}")
+                                                # 가장 높은 유사도 저장
+                                                if pair.cos_sim > max_similarity:
+                                                    max_similarity = pair.cos_sim
+                                                    print(f"[DEBUG] 최대 유사도 업데이트: {max_similarity:.3f}")
+
+                                                # 유사도 0.85 이상이면 중복으로 판정
+                                                if pair.cos_sim >= 0.85:
+                                                    is_duplicate = True
+                                                    # 중복된 기존 개념 찾기
+                                                    existing_id = pair.doc1_id if pair.doc2_id == 'new_concept' else pair.doc2_id
+                                                    for doc in existing_docs:
+                                                        if doc['id'] == existing_id:
+                                                            similar_text = doc['text'][:100]
+                                                            st.error(f"[ERROR] 중복된 개념이 감지되었습니다! (코사인 유사도: {pair.cos_sim:.3f})")
+                                                            st.warning(f"기존 개념: {doc['text'][:100]}...")
+                                                            st.info(f"상세 유사도 - 코사인: {pair.cos_sim:.3f}, 자카드: {pair.jaccard_score:.3f}, 종합: {pair.combined_score:.3f}")
+                                                            break
+                                                    break
+
+                                        if similarity_details:
+                                            with st.expander("[SIMILARITY] 유사도 분석 결과", expanded=True):
+                                                for detail in similarity_details[:5]:  # 상위 5개만 표시
+                                                    st.write(f"• {detail}")
+
+                                    # 중복이 아니더라도 높은 유사도는 표시
+                                    if not duplicate_pairs:
+                                        with st.expander("[SIMILARITY] 유사도 분석 결과", expanded=True):
+                                            st.write("유사 항목 없음 (비교 대상 부족 또는 최초 저장)")
+                                    if not is_duplicate and max_similarity > 0.5:
+                                        st.info(f"[INFO] 유사한 개념 발견 (코사인 유사도: {max_similarity:.3f}) - 저장은 가능합니다")
+                                    elif not is_duplicate and max_similarity > 0:
+                                        st.info(f"[INFO] 저장 진행 (최대 유사도: {max_similarity:.3f})")
+                                    else:
+                                        print(f"[DEBUG] 최종 유사도 상태 - max_similarity: {max_similarity}, is_duplicate: {is_duplicate}")
 
                             except Exception as e:
                                 st.error(f"[ERROR] 개념 중복 검사 실패: {e}")
@@ -1118,17 +1171,30 @@ def concept_input_form():
 
                         # AI 분석 (설명이 있는 경우에만)
                         if concept_data['description']:
-                            with st.spinner("[ANALYSIS] AI가 개념을 분석 중..."):
-                                try:
-                                    analyzed = gemini_service.analyze_concept(concept_data['description'])
-                                    concept_data.update({
-                                        'keywords': analyzed.get('keywords', []),
-                                        'category': analyzed.get('category', ''),
-                                        'detailed_explanation': analyzed.get('detailed_explanation', concept_data['description'])
-                                    })
-                                    st.success("[SUCCESS] AI 분석 완료!")
-                                except Exception as e:
-                                    st.warning(f"[WARNING] AI 분석 실패: {e}")
+                            max_retries = 3
+                            for attempt in range(max_retries):
+                                with st.spinner(f"[ANALYSIS] AI가 개념을 분석 중... (시도 {attempt + 1}/{max_retries})"):
+                                    try:
+                                        analyzed = gemini_service.analyze_concept(concept_data['description'])
+                                        concept_data.update({
+                                            'keywords': analyzed.get('keywords', []),
+                                            'category': analyzed.get('category', ''),
+                                            'detailed_explanation': analyzed.get('detailed_explanation', concept_data['description'])
+                                        })
+                                        st.success(f"[SUCCESS] AI 분석 완료! (시도 {attempt + 1}/{max_retries})")
+                                        break  # 성공시 루프 종료
+                                    except Exception as e:
+                                        if attempt < max_retries - 1:
+                                            st.warning(f"[RETRY] AI 분석 실패 (시도 {attempt + 1}), GPT-5로 재시도... 오류: {e}")
+                                            continue  # 다시 시도
+                                        else:
+                                            st.error(f"[ERROR] AI 분석 {max_retries}회 모두 실패: {e}")
+                                            # 기본값으로 폴백
+                                            concept_data.update({
+                                                'keywords': [],
+                                                'category': '기타',
+                                                'detailed_explanation': concept_data['description']
+                                            })
 
                         # 제목 설정 (설명 또는 이미진 분석 결과 기반)
                         if concept_data.get('description'):
@@ -1176,35 +1242,20 @@ def concept_input_form():
                                         else:
                                             auto_concept_dup_n_results = 5
 
-                                        # 유사한 개념 검색
-                                        results = collection.query(
-                                            query_texts=[concept_text],
-                                            n_results=auto_concept_dup_n_results,
-                                            where={"type": "concept"}
-                                        )
+                                        # 유사한 개념 검색 (where 필터 제거 - 컬렉션이 비어있을 수 있음)
+                                        try:
+                                            results = collection.query(
+                                                query_texts=[concept_text],
+                                                n_results=auto_concept_dup_n_results
+                                            )
+                                        except Exception as query_error:
+                                            print(f"[DEBUG] ChromaDB 쿼리 오류: {query_error}")
+                                            # 빈 결과로 처리
+                                            results = {'documents': [[]], 'ids': [[]], 'metadatas': [[]]}
             
-                                        # 검색 결과가 없더라도 [GENRE]/[SIMILARITY] 표시는 항상 수행
-                                        has_docs = bool(results.get('documents') and results['documents'][0])
+                                        # 검색 결과가 없더라도 유사도 분석 결과는 표시
+                                        has_docs = bool(results.get('documents') and results['documents'] and len(results['documents']) > 0 and results['documents'][0] and len(results['documents'][0]) > 0)
                                         if not has_docs:
-                                            if ADVANCED_DEDUP_AVAILABLE:
-                                                from advanced_dedup.genre_classifier import medical_genre_classifier
-                                                _g, _conf = medical_genre_classifier.classify_text(concept_text)
-                                                with st.expander("[GENRE] 장르 분류 결과", expanded=True):
-                                                    st.write(f"**장르**: {_g.value}")
-                                                    st.write(f"**신뢰도**: {_conf:.3f}")
-                                                    st.info("[INFO] 비교 대상이 없어 유사도 분석은 표시만 진행")
-                                            else:
-                                                from deduplication_engine import deduplication_engine as _simple_engine
-                                                _tl = (concept_text or "").lower()
-                                                _scores = {g: sum(1 for kw in kws if kw.lower() in _tl) for g, kws in _simple_engine.genres.items()}
-                                                _bg = max(_scores, key=_scores.get) if _scores else 'medical'
-                                                _tot = sum(_scores.values()) or 1
-                                                _cf = (_scores.get(_bg, 0) / _tot)
-                                                with st.expander("[GENRE] 장르 분류 결과", expanded=True):
-                                                    st.write(f"**장르**: {_bg}")
-                                                    st.write(f"**신뢰도**: {_cf:.3f}")
-                                                    st.info("[FALLBACK] 키워드 기반 분류")
-            
                                             with st.expander("[SIMILARITY] 유사도 분석 결과", expanded=True):
                                                 st.write("유사 항목 없음 (비교 대상 부족 또는 최초 저장)")
             
@@ -1221,20 +1272,9 @@ def concept_input_form():
             
                                             # 고급 중복 제거 엔진 사용 (개념용)
                                             if ADVANCED_DEDUP_AVAILABLE:
-                                                st.info("[INFO] 고급 개념 중복 제거 엔진 사용 중 (장르 분류 + Cross-Encoder + 다양성 보존)")
+                                                st.info("[INFO] 고급 개념 중복 제거 엔진 사용 중 (Cross-Encoder + 다양성 보존)")
                                                 print(f"[DEBUG] 고급 개념 엔진 호출 - 기존 문서 수: {len(existing_docs)}")
                                                 st.info(f"[DEBUG] 기존 개념 {len(existing_docs)}개와 비교 중...")
-            
-                                                # 개념 장르 분류 먼저 표시
-                                                from advanced_dedup.genre_classifier import medical_genre_classifier
-                                                genre, genre_confidence = medical_genre_classifier.classify_text(concept_text)
-                                                with st.expander("[GENRE] 장르 분류 결과", expanded=True):
-                                                    st.write(f"**장르**: {genre.value}")
-                                                    st.write(f"**신뢰도**: {genre_confidence:.3f}")
-                                                    if genre_confidence > 0.5:
-                                                        st.success(f"[AI] Gemini 2.5 Flash 분류 사용")
-                                                    else:
-                                                        st.info(f"[FALLBACK] 키워드 기반 분류 사용")
             
                                                 # 새 개념을 포함한 전체 문서로 중복 검사
                                                 all_docs = existing_docs + [{
@@ -1254,17 +1294,7 @@ def concept_input_form():
                                                 print(f"[DEBUG] 고급 개념 엔진 결과 - 중복 쌍: {len(duplicate_pairs) if duplicate_pairs else 0}개")
                                             else:
                                                 # 기존 방식 폴백
-                                                # [GENRE] 폴백 분류 표시 (고급 엔진 미사용 시)
-                                                from deduplication_engine import deduplication_engine as _simple_engine
-                                                _tl = (concept_text or "").lower()
-                                                _scores = {g: sum(1 for kw in kws if kw.lower() in _tl) for g, kws in _simple_engine.genres.items()}
-                                                _bg = max(_scores, key=_scores.get) if _scores else 'medical'
-                                                _tot = sum(_scores.values()) or 1
-                                                _cf = (_scores.get(_bg, 0) / _tot)
-                                                with st.expander("[GENRE] 장르 분류 결과", expanded=True):
-                                                    st.write(f"**장르**: {_bg}")
-                                                    st.write(f"**신뢰도**: {_cf:.3f}")
-                                                    st.info("[FALLBACK] 키워드 기반 분류")
+                                                st.info("[INFO] 기본 중복 제거 엔진 사용")
                                                 unique_ids, duplicate_pairs = deduplication_engine.deduplicate(
                                                     existing_docs + [{'id': 'new_concept', 'text': concept_text, 'domain': 'medical', 'type': 'concept'}],
                                                     domain='medical',
@@ -1441,8 +1471,8 @@ def concept_input_form():
                                 st.error(f"[ERROR] 상세 오류: {traceback.format_exc()}")
                 except Exception as e:
                     st.error(f"[ERROR] 개념 저장 처리 중 오류: {e}")
-            # else:
-                # st.warning("[WARNING] 입력이 없거나 이미지를 업로드해주세요")
+        else:
+            st.error("[ERROR] 개념 설명을 입력하거나 이미지를 업로드해주세요")
 
 
 def ai_generation_tab():

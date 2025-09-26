@@ -58,7 +58,7 @@ class ProblemAnalyzer:
                 # AI 분석 결과
                 "concepts": ai_analysis.get("concepts", []),
                 "keywords": all_keywords,
-                "difficulty": ai_analysis.get("difficulty", "보통"),
+                "difficulty": ai_analysis.get("difficulty", "중"),
 
                 # 메타데이터
                 "confidence_score": ai_analysis.get("confidence_score", 0.0),
@@ -83,7 +83,13 @@ class ProblemAnalyzer:
 
         except Exception as e:
             print(f"[ERROR] 문제 처리 실패: {e}")
-            return self._create_fallback_problem(question_text, choices, correct_answer, explanation, subject)
+            # GPT-5 재시도 실패 시 전체 처리 실패로 처리 (오류 상태로 저장하지 않음)
+            if "GPT-5 enhancement failed after retries" in str(e):
+                print(f"[CRITICAL] GPT-5 분석 재시도 실패 - 문제 저장을 중단합니다")
+                raise Exception(f"Problem analysis critically failed: {e}")
+            else:
+                # 다른 오류는 기존대로 fallback 처리
+                return self._create_fallback_problem(question_text, choices, correct_answer, explanation, subject)
 
     def _validate_problem_data(self, problem_data: Dict[str, Any]) -> Dict[str, Any]:
         """문제 데이터 품질 검증"""
@@ -141,7 +147,7 @@ class ProblemAnalyzer:
             "subject": subject,
             "concepts": ["분석실패"],
             "keywords": ["fallback"],
-            "difficulty": "보통",
+            "difficulty": "중",
             "confidence_score": 0.0,
             "verified_by": "fallback",
             "created_at": datetime.now().isoformat(),
