@@ -320,6 +320,10 @@ def question_input_form():
                     st.error("[ERROR] 중복된 선택지가 있습니다! 모든 선택지는 서로 달라야 합니다.")
                 else:
                     try:
+                        # is_duplicate 변수 초기화 (exception 발생 시에도 사용 가능하도록)
+                        is_duplicate = False
+                        max_similarity = 0.0
+
                         # 문제 중복 체크를 위해 ChromaDB에서 검색
                         from rag_engine_multi_domain import multi_domain_rag_engine
 
@@ -398,8 +402,7 @@ def question_input_form():
                                     )
 
                                 # new_question이 중복으로 판정되었는지 확인
-                                is_duplicate = False
-                                max_similarity = 0.0
+                                # (이미 초기화되어 있으므로 similar_text만 초기화)
                                 similar_text = ""
 
                                 print(f"[DEBUG] 중복 체크 시작 - 기존 문서 개수: {len(existing_docs)}")
@@ -603,66 +606,186 @@ def question_input_form():
                                 question_data['displayWithProblem'] = display_with_problem
                                 question_data['imageUrl'] = url_list[0]  # First URL as main
 
-                        # AI 분석 자동 실행
+                        # AI 분석 자동 실행 (중복이 아닌 경우에만)
                         critical_analysis_failure = False  # 초기화
-                        with st.spinner("[ANALYSIS] AI가 문제를 분석 중..."):
-                            try:
-                                # ProblemAnalyzer의 process_problem 메서드 호출
-                                analysis_result = problem_analyzer.process_problem(
-                                    question_text=question_text,
-                                    choices=non_empty_choices,
-                                    correct_answer=correct_answer,
-                                    explanation=explanation,
-                                    subject=subject
-                                )
-
-                                # 분석 결과를 문제 데이터에 추가
-                                question_data['analysis'] = {
-                                    'concepts': analysis_result.get('concepts', []),
-                                    'keywords': analysis_result.get('keywords', []),
-                                    'difficulty': analysis_result.get('difficulty', '중'),
-                                    'confidence_score': 0.85,
-                                    'verified_by': 'hierarchical_analyzer',
-                                    'processed_at': datetime.now().isoformat()
-                                }
-                                question_data['status'] = 'analysis_completed'
-
-                                st.success("[SUCCESS] AI 분석 완료!")
-
-                                # 분석 결과 표시
-                                with st.expander("[RESULT] 분석 결과", expanded=True):
-                                    col1, col2 = st.columns(2)
-                                    with col1:
-                                        st.write("**개념:**", ', '.join(analysis_result.get('concepts', [])))
-                                        st.write("**키워드:**", ', '.join(analysis_result.get('keywords', [])))
-                                    with col2:
-                                        st.write("**난이도:**", analysis_result.get('difficulty', '중'))
-                                        st.write("**신뢰도:**", f"{0.85:.1%}")
-                            except Exception as e:
-                                # GPT-5 재시도 실패 시 저장 중단
-                                if "Problem analysis critically failed" in str(e):
-                                    st.error(f"[CRITICAL] GPT-5 분석이 재시도 후에도 실패했습니다. 문제 저장을 중단합니다.")
-                                    st.error(f"상세 오류: {e}")
-                                    st.warning("GPT-5 API 상태를 확인하고 다시 시도해주세요.")
-                                    question_data['status'] = 'critical_analysis_failed'
-                                    # analysis_failed와 달리 저장을 진행하지 않도록 플래그 설정
-                                    critical_analysis_failure = True
-                                else:
-                                    st.error(f"[ERROR] AI 분석 중 오류: {e}")
-                                    question_data['status'] = 'analysis_failed'
-                                    critical_analysis_failure = False
-
-                        # ChromaDB에 자동 저장 (critical failure가 아닌 경우에만)
-                        if not critical_analysis_failure:
-                            with st.spinner("[SAVE] ChromaDB에 저장 중..."):
+                        if not is_duplicate:
+                            with st.spinner("[ANALYSIS] AI가 문제를 분석 중..."):
                                 try:
-                                    from rag_engine_multi_domain import multi_domain_rag_engine
+                                    # ProblemAnalyzer의 process_problem 메서드 호출
+                                    analysis_result = problem_analyzer.process_problem(
+                                        question_text=question_text,
+                                        choices=non_empty_choices,
+                                        correct_answer=correct_answer,
+                                        explanation=explanation,
+                                        subject=subject,
+                                        user_tags=[t.strip() for t in (tags or '').split(',') if t.strip()]
+                                    )
 
-                                    # nursing_questions 컬렉션에 추가
-                                    collection = multi_domain_rag_engine.chroma_client.get_or_create_collection('nursing_questions')
+                                    # 분석 결과를 문제 데이터에 추가
+                                    question_data['analysis'] = {
+                                        'concepts': analysis_result.get('concepts', []),
+                                        'keywords': analysis_result.get('keywords', []),
+                                        'difficulty': analysis_result.get('difficulty', '중'),
+                                        'confidence_score': 0.85,
+                                        'verified_by': 'hierarchical_analyzer',
+                                        'processed_at': datetime.now().isoformat()
+                                    }
+                                    question_data['status'] = 'analysis_completed'
 
-                                    # Create full document with all question data
-                                    full_document = f"""
+                                    st.success("[SUCCESS] AI 분석 완료!")
+
+                                    # 분석 결과 표시
+                                    with st.expander("[RESULT] 분석 결과", expanded=True):
+                                        # 분야 감지 결과 표시
+                                        detected_field = analysis_result.get('field_detected', 'both')
+                                        field_map = {'medical': '의학', 'nursing': '간호학', 'both': '공통'}
+                                        st.info(f"[FIELD] 감지된 분야: **{field_map.get(detected_field, '공통')}**")
+
+                                        # 페르소나별 분석 과정 보기 (있는 경우)
+                                        if 'persona_views' in analysis_result:
+                                            with st.expander("[PERSONA] 전문가별 분석 과정 보기"):
+                                                tabs = st.tabs(["학술전문가", "임상전문가", "시험전문가", "최근합격자"])
+
+                                                views = analysis_result['persona_views']
+                                                with tabs[0]:
+                                                    if 'academic' in views:
+                                                        st.write("**개념:**", views['academic'].get('concepts', []))
+                                                        st.write("**키워드:**", views['academic'].get('keywords', []))
+                                                        if 'clinical_relevance' in views['academic']:
+                                                            st.write("**임상 관련성:**", views['academic']['clinical_relevance'])
+
+                                                with tabs[1]:
+                                                    if 'clinical' in views:
+                                                        st.write("**개념:**", views['clinical'].get('concepts', []))
+                                                        st.write("**키워드:**", views['clinical'].get('keywords', []))
+                                                        if 'common_mistakes' in views['clinical']:
+                                                            st.write("**자주 하는 실수:**", views['clinical']['common_mistakes'])
+
+                                                with tabs[2]:
+                                                    if 'exam' in views:
+                                                        st.write("**개념:**", views['exam'].get('concepts', []))
+                                                        st.write("**키워드:**", views['exam'].get('keywords', []))
+                                                        if 'test_strategy' in views['exam']:
+                                                            st.write("**시험 전략:**", views['exam']['test_strategy'])
+
+                                                with tabs[3]:
+                                                    if 'recent' in views:
+                                                        st.write("**개념:**", views['recent'].get('concepts', []))
+                                                        st.write("**키워드:**", views['recent'].get('keywords', []))
+                                                        if 'study_tip' in views['recent']:
+                                                            st.write("**학습 팁:**", views['recent']['study_tip'])
+
+                                        # GPT-5 검수 과정 보기 (있는 경우)
+                                        if 'review_process' in analysis_result:
+                                            with st.expander("[REVIEW] GPT-5 검수 과정 보기"):
+                                                review = analysis_result['review_process']
+                                                tabs = st.tabs(["학술 검토", "임상 검토", "시험 검토", "학습 검토"])
+
+                                                with tabs[0]:
+                                                    if 'academic_review' in review:
+                                                        st.write("**추가된 개념:**", review['academic_review'].get('added_concepts', []))
+                                                        st.write("**검토 의견:**", review['academic_review'].get('comment', ''))
+
+                                                with tabs[1]:
+                                                    if 'clinical_review' in review:
+                                                        st.write("**추가된 개념:**", review['clinical_review'].get('added_concepts', []))
+                                                        st.write("**검토 의견:**", review['clinical_review'].get('comment', ''))
+
+                                                with tabs[2]:
+                                                    if 'exam_review' in review:
+                                                        st.write("**추가된 개념:**", review['exam_review'].get('added_concepts', []))
+                                                        st.write("**검토 의견:**", review['exam_review'].get('comment', ''))
+
+                                                with tabs[3]:
+                                                    if 'recent_review' in review:
+                                                        st.write("**추가된 개념:**", review['recent_review'].get('added_concepts', []))
+                                                        st.write("**검토 의견:**", review['recent_review'].get('comment', ''))
+
+                                        # 통합 결과
+                                        st.subheader("[FINAL] 통합 분석 결과")
+                                        col1, col2 = st.columns(2)
+                                        with col1:
+                                            st.write("**핵심 개념:**", ', '.join(analysis_result.get('concepts', [])))
+                                            st.write("**키워드:**", ', '.join(analysis_result.get('keywords', [])))
+                                        with col2:
+                                            # 새로운 난이도 시스템 표시
+                                            difficulty = analysis_result.get('difficulty', {})
+                                            if isinstance(difficulty, dict):
+                                                st.write("**인지 부담:**", f"{difficulty.get('cognitive_load', 3)}/5")
+                                                st.write("**선행학습:**", f"{difficulty.get('prerequisite_count', 0)}개 필요")
+                                                st.write("**예상 학습시간:**", f"{difficulty.get('study_hours', 2)}시간")
+                                                st.write("**학습 단계:**", difficulty.get('learning_stage', 'development'))
+                                            else:
+                                                st.write("**난이도:**", difficulty)
+
+                                            confidence = analysis_result.get('confidence_score', 0.85)
+                                            st.write("**신뢰도:**", f"{confidence:.1%}")
+                                            st.write("**검증:**", analysis_result.get('verified_by', 'gpt5_mini'))
+                                except Exception as e:
+                                    # GPT-5 재시도 실패 시 저장 중단
+                                    if "Problem analysis critically failed" in str(e):
+                                        st.error(f"[CRITICAL] GPT-5 분석이 재시도 후에도 실패했습니다. 문제 저장을 중단합니다.")
+                                        st.error(f"상세 오류: {e}")
+                                        st.warning("GPT-5 API 상태를 확인하고 다시 시도해주세요.")
+                                        question_data['status'] = 'critical_analysis_failed'
+                                        # analysis_failed와 달리 저장을 진행하지 않도록 플래그 설정
+                                        critical_analysis_failure = True
+                                    else:
+                                        st.error(f"[ERROR] AI 분석 중 오류: {e}")
+                                        question_data['status'] = 'analysis_failed'
+                                        critical_analysis_failure = False
+                        else:
+                            # 중복인 경우 AI 분석 스킵
+                            st.warning("[INFO] 중복으로 판정되어 AI 분석을 수행하지 않습니다")
+                            question_data['status'] = 'duplicate_blocked'
+                            critical_analysis_failure = True  # 저장도 차단
+
+                        # 최종 저장 전 사용자 확인 (critical failure나 중복이 아닌 경우에만)
+                        if not critical_analysis_failure:
+                            st.divider()
+                            st.subheader("[CONFIRM] 저장 전 최종 확인")
+
+                            # 분석 결과 요약 표시
+                            with st.expander("[REVIEW] 분석 결과 확인", expanded=True):
+                                st.write("**문제:**", question_text[:200] + "...")
+                                st.write("**정답:**", correct_answer)
+                                if 'analysis' in question_data:
+                                    st.write("**핵심 개념:**", ', '.join(question_data['analysis'].get('concepts', [])[:5]))
+                                    st.write("**키워드:**", ', '.join(question_data['analysis'].get('keywords', [])[:10]))
+
+                                    difficulty = question_data['analysis'].get('difficulty', {})
+                                    if isinstance(difficulty, dict):
+                                        st.write("**인지 부담:**", f"{difficulty.get('cognitive_load', 3)}/5")
+                                        st.write("**학습 시간:**", f"{difficulty.get('study_hours', 2)}시간")
+                                    else:
+                                        st.write("**난이도:**", difficulty)
+                                st.write("**과목:**", subject)
+                                st.write("**태그:**", ', '.join(question_data.get('tags', [])))
+
+                            # 저장 확인 버튼
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                if st.button("[YES] 저장하기", type="primary", use_container_width=True, key="confirm_save_problem"):
+                                    save_confirmed = True
+                                else:
+                                    save_confirmed = False
+                            with col2:
+                                if st.button("[NO] 취소하기", use_container_width=True, key="cancel_save_problem"):
+                                    st.warning("[CANCELLED] 저장이 취소되었습니다")
+                                    st.stop()
+
+                            # 저장 진행
+                            if save_confirmed:
+                                with st.spinner("[SAVE] ChromaDB에 저장 중..."):
+                                    try:
+                                        from rag_engine_multi_domain import multi_domain_rag_engine
+
+                                        # nursing_questions 컬렉션에 추가
+                                        collection_name = 'nursing_questions'
+                                        collection = multi_domain_rag_engine.chroma_client.get_or_create_collection(collection_name)
+
+                                        # Create full document with all question data
+                                        full_document = f"""
 문제: {question_data['questionText']}
 선택지:
 1. {question_data.get('choices', ['', '', '', '', ''])[0]}
@@ -674,12 +797,12 @@ def question_input_form():
 해설: {question_data.get('explanation', '')}
 """
 
-                                    # Store complete metadata including choices
-                                    collection.add(
-                                        ids=[question_data['id']],
-                                        documents=[full_document],
-                                        metadatas=[{
-                                            'questionText': question_data.get('questionText', ''),
+                                        # Store complete metadata including choices
+                                        collection.add(
+                                            ids=[question_data['id']],
+                                            documents=[full_document],
+                                            metadatas=[{
+                                                'questionText': question_data.get('questionText', ''),
                                             'choice1': question_data.get('choices', ['', '', '', '', ''])[0] or '',
                                             'choice2': question_data.get('choices', ['', '', '', '', ''])[1] or '',
                                             'choice3': question_data.get('choices', ['', '', '', '', ''])[2] or '',
@@ -687,23 +810,22 @@ def question_input_form():
                                             'choice5': question_data.get('choices', ['', '', '', '', ''])[4] or '',
                                             'correctAnswer': question_data.get('correctAnswer', '') or '',
                                             'explanation': question_data.get('explanation', '') or '',
-                                            'subject': question_data.get('subject', '간호학') or '간호학',
-                                            'difficulty': question_data.get('analysis', {}).get('difficulty', '중') or '중',
+                                            'subject': question_data.get('subject', '��ȣ��') or '��ȣ��',
+                                            'difficulty': question_data.get('analysis', {}).get('difficulty', '��') or '��',
                                             'tags': ', '.join(question_data.get('analysis', {}).get('keywords', [])) or '',
                                             'createdBy': 'streamlit_user',
                                             'createdAt': question_data.get('createdAt', '') or '',
                                             'hasImage': bool(question_data.get('hasImage', False)),
                                             'type': 'problem'
-                                        }]
-                                    )
-
-                                    # 유사도 정보와 함께 저장 완료 메시지
-                                    if 'max_similarity' in locals() and max_similarity > 0:
-                                        st.success(f"[SUCCESS] ChromaDB 저장 완료! (최대 유사도: {max_similarity:.3f})")
-                                    else:
-                                        st.success(f"[SUCCESS] ChromaDB 저장 완료!")
-                                except Exception as e:
-                                    st.error(f"[ERROR] ChromaDB 저장 실패: {e}")
+                                            }]
+                                        )
+                                        # 유사도 정보와 함께 저장 완료 메시지
+                                        if 'max_similarity' in locals() and max_similarity > 0:
+                                            st.success(f"[SUCCESS] ChromaDB 저장 완료! (최대 유사도: {max_similarity:.3f})")
+                                        else:
+                                            st.success(f"[SUCCESS] ChromaDB 저장 완료!")
+                                    except Exception as e:
+                                        st.error(f"[ERROR] ChromaDB 저장 실패: {e}")
 
 
                         # Save to JSON first (before Firebase modifies the data) - only if analysis succeeded
@@ -1169,33 +1291,6 @@ def concept_input_form():
                             concept_data['imageUrl'] = None
                             concept_data['imageAnalysis'] = None
 
-                        # AI 분석 (설명이 있는 경우에만)
-                        if concept_data['description']:
-                            max_retries = 3
-                            for attempt in range(max_retries):
-                                with st.spinner(f"[ANALYSIS] AI가 개념을 분석 중... (시도 {attempt + 1}/{max_retries})"):
-                                    try:
-                                        analyzed = gemini_service.analyze_concept(concept_data['description'])
-                                        concept_data.update({
-                                            'keywords': analyzed.get('keywords', []),
-                                            'category': analyzed.get('category', ''),
-                                            'detailed_explanation': analyzed.get('detailed_explanation', concept_data['description'])
-                                        })
-                                        st.success(f"[SUCCESS] AI 분석 완료! (시도 {attempt + 1}/{max_retries})")
-                                        break  # 성공시 루프 종료
-                                    except Exception as e:
-                                        if attempt < max_retries - 1:
-                                            st.warning(f"[RETRY] AI 분석 실패 (시도 {attempt + 1}), GPT-5로 재시도... 오류: {e}")
-                                            continue  # 다시 시도
-                                        else:
-                                            st.error(f"[ERROR] AI 분석 {max_retries}회 모두 실패: {e}")
-                                            # 기본값으로 폴백
-                                            concept_data.update({
-                                                'keywords': [],
-                                                'category': '기타',
-                                                'detailed_explanation': concept_data['description']
-                                            })
-
                         # 제목 설정 (설명 또는 이미진 분석 결과 기반)
                         if concept_data.get('description'):
                             concept_data['title'] = concept_data['description'][:50] + '...' if len(concept_data['description']) > 50 else concept_data['description']
@@ -1206,7 +1301,7 @@ def concept_input_form():
                         else:
                             concept_data['title'] = f"개념 {datetime.now().strftime('%Y-%m-%d %H:%M')}"
 
-                        # ChromaDB에 저장 전 중복 체크
+                        # ChromaDB에 저장 전 중복 체크 (AI 분석 전에 먼저 수행)
                         from rag_engine_multi_domain import multi_domain_rag_engine
                         with st.spinner("[CHECK] 중복 확인 중..."):
                             try:
@@ -1342,133 +1437,233 @@ def concept_input_form():
                                 if is_duplicate:
                                     # ChromaDB와 Firebase 모두 저장 차단
                                     st.error("[BLOCKED] 유사도 0.85 이상으로 저장이 차단되었습니다")
+                                    st.warning("[INFO] 중복으로 판정되어 AI 분석을 수행하지 않습니다")
                                     return
-            
 
-                            # ChromaDB에 저장
                             except Exception as e:
                                 st.warning(f"[WARNING] 중복 체크 오류: {e}")
-                        with st.spinner("[SAVE] ChromaDB에 저장 중..."):
-                            try:
-                                st.info("[DEBUG] ChromaDB 저장 시작...")
-                                from rag_engine_multi_domain import multi_domain_rag_engine
-    
-                                # 모든 개념은 medical_concepts 컬렉션에 저장
-                                collection_name = 'medical_concepts'
-                                st.info(f"[DEBUG] 컬렉션 접근: {collection_name}")
-    
-                                collection = multi_domain_rag_engine.chroma_client.get_or_create_collection(collection_name)
-                                st.info(f"[DEBUG] 컬렉션 생성/접근 완료: {collection}")
-    
-                                # 데이터 유효성 검사
-                                st.info(f"[DEBUG] 개념 데이터 검증: ID={concept_data.get('id')}, 제목={concept_data.get('title')}")
-                                st.info(f"[DEBUG] 이미지 정보: hasImage={concept_data.get('hasImage')}, imageUrl={bool(concept_data.get('imageUrl'))}")
-    
-                                # Create full document with complete concept data including image info
-                                image_info = ""
-                                if concept_data.get('hasImage'):
-                                    image_analysis = concept_data.get('imageAnalysis') or {}
-                                    if isinstance(image_analysis, dict):
-                                        image_info = f"""
-    이미지 포함: 예
-    이미지 설명: {concept_data.get('imageDescription', '') or ''}
-    이미지 주요 객체: {', '.join(image_analysis.get('main_objects', []) or [])}
-    이미지 의료 태그: {', '.join(image_analysis.get('medical_tags', []) or [])}
-    """
-                                    else:
-                                        image_info = "\n이미지 포함: 예\n"
-    
-                                full_document = f"""
-    설명: {concept_data.get('description', '')}
-    상세 설명: {concept_data.get('detailed_explanation', '')}
-    카테고리: {concept_data.get('category', '')}
-    키워드: {', '.join(concept_data.get('keywords', []))}
-    태그: {', '.join(concept_data.get('tags', []))}
-    {image_info}
-    """
-    
-                                # Store complete metadata including image info (ChromaDB에서 None 값 방지)
-                                metadata = {
-                                    'title': concept_data.get('title', ''),
-                                    'description': concept_data.get('description', '')[:500] if concept_data.get('description') else '',
-                                    'category': concept_data.get('category', ''),
-                                    'keywords': ', '.join(concept_data.get('keywords', [])) or '',
-                                    'tags': ', '.join(concept_data.get('tags', [])) or '',
-                                    'createdBy': concept_data.get('createdBy', 'streamlit_user'),
-                                    'createdAt': concept_data.get('createdAt', ''),
-                                    'hasImage': bool(concept_data.get('hasImage', False)),
-                                    'imageUrl': concept_data.get('imageUrl', '') or '',
-                                    'type': 'concept'
-                                }
-    
-                                # Add image analysis metadata if available (None 값 방지)
-                                if concept_data.get('imageAnalysis') and isinstance(concept_data['imageAnalysis'], dict):
-                                    image_analysis = concept_data['imageAnalysis']
-                                    metadata.update({
-                                        'imageDescription': concept_data.get('imageDescription', '') or '',
-                                        'imageMainObjects': ', '.join(image_analysis.get('main_objects', []) or []) or '',
-                                        'imageMedicalTags': ', '.join(image_analysis.get('medical_tags', []) or []) or '',
-                                        'imageConfidence': float(image_analysis.get('confidence', 0.0) or 0.0)
-                                    })
-    
-                                collection.add(
-                                    ids=[concept_data['id']],
-                                    documents=[full_document],
-                                    metadatas=[metadata]
-                                )
-    
-                                # 유사도 정보와 함께 저장 완료 메시지
-                                if max_similarity > 0:
-                                    st.success(f"[SUCCESS] ChromaDB 저장 완료! (컬렉션: {collection_name}, 최대 유사도: {max_similarity:.3f})")
+                                # 오류 발생 시에도 is_duplicate는 False로 유지
+                                pass
+
+                            # AI 분석 (중복이 아닌 경우에만 실행)
+                            if concept_data['description'] and not is_duplicate:
+                                # 페르소나 기반 개념 분석 (RAG 최적화)
+                                with st.spinner("[ANALYSIS] 4명의 전문가가 개념을 분석 중..."):
+                                    try:
+                                        # 계층적 분석기 사용
+                                        from analyzers.hierarchical_analyzer import HierarchicalAnalyzer
+                                        analyzer = HierarchicalAnalyzer()
+
+                                        # 개념 분석 (유사도 검색 최적화)
+                                        analyzed = analyzer.analyze_concept(
+                                            concept_description=concept_data['description'],
+                                            tags=concept_data.get('tags', [])
+                                        )
+
+                                        # 분석 결과 통합 (상세 해설 제거)
+                                        concept_data.update({
+                                            'keywords': analyzed.get('keywords', []),
+                                            'category': analyzed.get('field', ''),  # medical/nursing/both
+                                            'search_terms': analyzed.get('search_terms', []),  # RAG용 검색어
+                                            'related_concepts': analyzed.get('related_concepts', [])  # 연관 개념
+                                        })
+
+                                        # 페르소나별 분석 결과 표시
+                                        if analyzed.get('personas'):
+                                            with st.expander("[PERSONAS] 전문가 분석 과정 보기"):
+                                                tabs = st.tabs([f"{p['name']}" for p in analyzed['personas']])
+                                                for i, persona in enumerate(analyzed['personas']):
+                                                    with tabs[i]:
+                                                        st.markdown(f"**역할**: {persona['role']}")
+                                                        st.markdown(f"**추출 키워드**: {', '.join(persona['keywords'][:5])}")
+                                                        st.markdown(f"**검색 표현**: {', '.join(persona['search_expressions'][:3])}")
+
+                                        st.success(f"[SUCCESS] 4명의 전문가 분석 완료! (분야: {analyzed.get('field', 'unknown')})")
+
+                                    except Exception as e:
+                                        st.error(f"[ERROR] 페르소나 분석 실패: {e}")
+                                        # Gemini 폴백
+                                        try:
+                                            st.warning("[FALLBACK] Gemini로 폴백 시도...")
+                                            analyzed = gemini_service.analyze_concept(concept_data['description'])
+                                            concept_data.update({
+                                                'keywords': analyzed.get('keywords', []),
+                                                'category': analyzed.get('category', '')
+                                            })
+                                            st.info("[INFO] Gemini 분석 완료")
+                                        except Exception as fallback_e:
+                                            st.error(f"[ERROR] 폴백도 실패: {fallback_e}")
+                                            # 기본값으로 설정
+                                            concept_data.update({
+                                                'keywords': [],
+                                                'category': '기타'
+                                            })
+
+                            # 최종 저장 전 사용자 확인
+                            st.divider()
+                            st.subheader("[CONFIRM] 저장 전 최종 확인")
+
+                            # 분석 결과 표시
+                            with st.expander("[REVIEW] 분석 결과 확인", expanded=True):
+                                st.write("**개념 설명:**", concept_data.get('description', '')[:200] + "...")
+                                st.write("**분야:**", concept_data.get('category', '미분류'))
+                                st.write("**키워드:**", ", ".join(concept_data.get('keywords', [])[:10]))
+                                if concept_data.get('search_terms'):
+                                    st.write("**검색어:**", ", ".join(concept_data.get('search_terms', [])[:10]))
+                                if concept_data.get('related_concepts'):
+                                    st.write("**연관 개념:**", ", ".join(concept_data.get('related_concepts', [])[:5]))
+
+                            # 저장 확인 버튼
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                if st.button("[YES] 저장하기", type="primary", use_container_width=True):
+                                    save_confirmed = True
                                 else:
-                                    st.success(f"[SUCCESS] ChromaDB 저장 완료! (컬렉션: {collection_name})")
-                            except Exception as e:
-                                st.error(f"[ERROR] ChromaDB 저장 실패: {e}")
+                                    save_confirmed = False
+                            with col2:
+                                if st.button("[NO] 취소하기", use_container_width=True):
+                                    st.warning("[CANCELLED] 저장이 취소되었습니다")
+                                    st.stop()
+
+                            # 저장 진행
+                            if save_confirmed:
+                                # ChromaDB에 저장
+                                with st.spinner("[SAVE] ChromaDB에 저장 중..."):
+                                    try:
+                                        st.info("[DEBUG] ChromaDB 저장 시작...")
+                                        from rag_engine_multi_domain import multi_domain_rag_engine
+
+                                        # 모든 개념은 medical_concepts 컬렉션에 저장
+                                        collection_name = 'medical_concepts'
+                                        st.info(f"[DEBUG] 컬렉션 접근: {collection_name}")
+
+                                        collection = multi_domain_rag_engine.chroma_client.get_or_create_collection(collection_name)
+                                        st.info(f"[DEBUG] 컬렉션 생성/접근 완료: {collection}")
+
+                                        # 데이터 유효성 검사
+                                        st.info(f"[DEBUG] 개념 데이터 검증: ID={concept_data.get('id')}, 제목={concept_data.get('title')}")
+                                        st.info(f"[DEBUG] 이미지 정보: hasImage={concept_data.get('hasImage')}, imageUrl={bool(concept_data.get('imageUrl'))}")
+
+                                        # Create full document with complete concept data including image info
+                                        image_info = ""
+                                        if concept_data.get('hasImage'):
+                                            image_analysis = concept_data.get('imageAnalysis') or {}
+                                            if isinstance(image_analysis, dict):
+                                                image_info = f"""
+                    이미지 포함: 예
+                    이미지 설명: {concept_data.get('imageDescription', '') or ''}
+                    이미지 주요 객체: {', '.join(image_analysis.get('main_objects', []) or [])}
+                    이미지 의료 태그: {', '.join(image_analysis.get('medical_tags', []) or [])}
+                    """
+                                            else:
+                                                image_info = "\n이미지 포함: 예\n"
+                                        else:
+                                            image_info = ""
     
-                        # JSON 파일로 로컬 저장 (Firebase 업로드 전에 저장)
-                        import json
-                        json_dir = "C:\\Users\\tkand\\Desktop\\development\\Hanoa\\Hanoa Hub Version 1\\saved_concepts"
-                        os.makedirs(json_dir, exist_ok=True)
+                                        full_document = f"""
+                                        설명: {concept_data.get('description', '')}
+                                        상세 설명: {concept_data.get('detailed_explanation', '')}
+                                        카테고리: {concept_data.get('category', '')}
+                                        키워드: {', '.join(concept_data.get('keywords', []))}
+                                        태그: {', '.join(concept_data.get('tags', []))}
+                                        {image_info}
+                                        """
+
+                                        # Store complete metadata including image info (ChromaDB에서 None 값 방지)
+                                        metadata = {
+                                            'title': concept_data.get('title', ''),
+                                            'description': concept_data.get('description', '')[:500] if concept_data.get('description') else '',
+                                            'category': concept_data.get('category', ''),
+                                            'keywords': ', '.join(concept_data.get('keywords', [])) or '',
+                                            'tags': ', '.join(concept_data.get('tags', [])) or '',
+                                            'createdBy': concept_data.get('createdBy', 'streamlit_user'),
+                                            'createdAt': concept_data.get('createdAt', ''),
+                                            'hasImage': bool(concept_data.get('hasImage', False)),
+                                            'imageUrl': concept_data.get('imageUrl', '') or '',
+                                            'type': 'concept'
+                                        }
+
+                                        # Add image analysis metadata if available (None 값 방지)
+                                        if concept_data.get('imageAnalysis') and isinstance(concept_data['imageAnalysis'], dict):
+                                            image_analysis = concept_data['imageAnalysis']
+                                            metadata.update({
+                                                'imageDescription': concept_data.get('imageDescription', '') or '',
+                                                'imageMainObjects': ', '.join(image_analysis.get('main_objects', []) or []) or '',
+                                                'imageMedicalTags': ', '.join(image_analysis.get('medical_tags', []) or []) or '',
+                                                'imageConfidence': float(image_analysis.get('confidence', 0.0) or 0.0)
+                                            })
+
+                                        try:
+                                            collection.add(
+                                            ids=[concept_data['id']],
+                                            documents=[full_document],
+                                            metadatas=[metadata]
+                                        )
+                                        except Exception as add_error:
+                                            if "dimension" in str(add_error).lower():
+                                                fallback_name = f"{collection_name}_e768"
+                                                fb = multi_domain_rag_engine.chroma_client.get_or_create_collection(fallback_name)
+                                                fb.add(
+                                                ids=[concept_data['id']],
+                                                documents=[full_document],
+                                                metadatas=[metadata]
+                                            )
+                                                st.warning(f"[MIGRATE] 기존 컬렉션 임베딩 차원 불일치로 {fallback_name}에 저장했습니다.")
+                                            else:
+                                                raise
     
-                        json_filename = f"concept_{concept_data['id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-                        json_path = os.path.join(json_dir, json_filename)
+                                        # 유사도 정보와 함께 저장 완료 메시지
+                                        if max_similarity > 0:
+                                            st.success(f"[SUCCESS] ChromaDB 저장 완료! (컬렉션: {collection_name}, 최대 유사도: {max_similarity:.3f})")
+                                        else:
+                                            st.success(f"[SUCCESS] ChromaDB 저장 완료! (컬렉션: {collection_name})")
+                                    except Exception as e:
+                                        st.error(f"[ERROR] ChromaDB 저장 실패: {e}")
     
-                        # Save JSON before Firebase upload (to avoid sentinel issues)
-                        with open(json_path, 'w', encoding='utf-8') as f:
-                            json.dump(concept_data, f, ensure_ascii=False, indent=2, default=str)
+                                # JSON 파일로 로컬 저장 (Firebase 업로드 전에 저장)
+                                import json
+                                json_dir = "C:\\Users\\tkand\\Desktop\\development\\Hanoa\\Hanoa Hub Version 1\\saved_concepts"
+                                os.makedirs(json_dir, exist_ok=True)
+
+                                json_filename = f"concept_{concept_data['id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                                json_path = os.path.join(json_dir, json_filename)
+
+                                # Save JSON before Firebase upload (to avoid sentinel issues)
+                                with open(json_path, 'w', encoding='utf-8') as f:
+                                    json.dump(concept_data, f, ensure_ascii=False, indent=2, default=str)
+
+                                st.success(f"[SUCCESS] 개념 저장 완료!")
+                                st.info(f"[SAVE] JSON 파일 저장 위치: {json_path}")
+
+
+                                # Firebase에 업로드 (JSON 저장 후)
+                                with st.spinner("[UPLOAD] Firebase에 업로드 중..."):
+                                    try:
+                                        # Firebase 초기화 상태 확인
+                                        st.info(f"[DEBUG] Firebase 초기화 상태: {firebase_service.initialized}")
     
-                        st.success(f"[SUCCESS] 개념 저장 완료!")
-                        st.info(f"[SAVE] JSON 파일 저장 위치: {json_path}")
-    
-    
-                        # Firebase에 업로드 (JSON 저장 후)
-                        with st.spinner("[UPLOAD] Firebase에 업로드 중..."):
-                            try:
-                                # Firebase 초기화 상태 확인
-                                st.info(f"[DEBUG] Firebase 초기화 상태: {firebase_service.initialized}")
-    
-                                # 디버그 정보 출력
-                                st.info(f"[DEBUG] 개념 ID: {concept_data.get('id', 'N/A')}")
-                                st.info(f"[DEBUG] 업로드할 데이터 키: {list(concept_data.keys())}")
-    
-                                upload_result = firebase_service.upload_concept(concept_data)
-    
-                                # 업로드 결과 상세 출력
-                                st.info(f"[DEBUG] 업로드 결과: {upload_result}")
-    
-                                if upload_result and upload_result.get('success'):
-                                    # 유사도 정보와 함께 Firebase 업로드 성공 메시지
-                                    if 'max_similarity' in locals() and max_similarity > 0:
-                                        st.success(f"[SUCCESS] Firebase 업로드 성공! (컬렉션: medical_concepts, 최대 유사도: {max_similarity:.3f})")
-                                    else:
-                                        st.success(f"[SUCCESS] Firebase 업로드 성공! (컬렉션: medical_concepts)")
-                                    st.success(f"[SUCCESS] 문서 ID: {upload_result.get('id', 'N/A')}")
-                                else:
-                                    st.warning(f"[WARNING] Firebase 업로드 실패: {upload_result.get('message', 'Unknown error')}")
-                            except Exception as e:
-                                st.error(f"[ERROR] Firebase 업로드 실패: {e}")
-                                import traceback
-                                st.error(f"[ERROR] 상세 오류: {traceback.format_exc()}")
+                                        # 디버그 정보 출력
+                                        st.info(f"[DEBUG] 개념 ID: {concept_data.get('id', 'N/A')}")
+                                        st.info(f"[DEBUG] 업로드할 데이터 키: {list(concept_data.keys())}")
+
+                                        upload_result = firebase_service.upload_concept(concept_data)
+
+                                        # 업로드 결과 상세 출력
+                                        st.info(f"[DEBUG] 업로드 결과: {upload_result}")
+
+                                        if upload_result and upload_result.get('success'):
+                                            # 유사도 정보와 함께 Firebase 업로드 성공 메시지
+                                            if 'max_similarity' in locals() and max_similarity > 0:
+                                                st.success(f"[SUCCESS] Firebase 업로드 성공! (컬렉션: medical_concepts, 최대 유사도: {max_similarity:.3f})")
+                                            else:
+                                                st.success(f"[SUCCESS] Firebase 업로드 성공! (컬렉션: medical_concepts)")
+                                            st.success(f"[SUCCESS] 문서 ID: {upload_result.get('id', 'N/A')}")
+                                        else:
+                                            st.warning(f"[WARNING] Firebase 업로드 실패: {upload_result.get('message', 'Unknown error')}")
+                                    except Exception as e:
+                                        st.error(f"[ERROR] Firebase 업로드 실패: {e}")
+                                        import traceback
+                                        st.error(f"[ERROR] 상세 오류: {traceback.format_exc()}")
                 except Exception as e:
                     st.error(f"[ERROR] 개념 저장 처리 중 오류: {e}")
         else:
@@ -2410,13 +2605,22 @@ def chromadb_check_tab():
 
         # Get Firebase stats
         try:
-            # All problems from Firebase (nursing + medical)
-            problems = firebase_service.get_problems(limit=1000)
+            # Nursing problems from Firebase
+            nursing_problems = firebase_service.get_nursing_problems(limit=1000)
             stats_data.append({
                 '데이터베이스': 'Firebase',
-                '컬렉션': '문제 (전체)',
-                '데이터 수': len(problems) if problems else 0,
-                '상태': '[ACTIVE]' if problems else '[EMPTY]'
+                '컬렉션': '간호문제',
+                '데이터 수': len(nursing_problems) if nursing_problems else 0,
+                '상태': '[ACTIVE]' if nursing_problems else '[EMPTY]'
+            })
+
+            # Medical problems from Firebase
+            medical_problems = firebase_service.get_medical_problems(limit=1000)
+            stats_data.append({
+                '데이터베이스': 'Firebase',
+                '컬렉션': '의학문제',
+                '데이터 수': len(medical_problems) if medical_problems else 0,
+                '상태': '[ACTIVE]' if medical_problems else '[EMPTY]'
             })
 
             # Concepts from Firebase

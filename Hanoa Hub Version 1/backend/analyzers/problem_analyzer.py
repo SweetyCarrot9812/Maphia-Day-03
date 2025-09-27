@@ -45,6 +45,32 @@ class ProblemAnalyzer:
                 (user_tags or []) + ai_analysis.get("keywords", [])
             ))
 
+            # Fallback: 최소 키워드 확보(2개 이상)
+            if len(all_keywords) < 2:
+                import re
+                text_pool = " ".join([
+                    str(question_text or ''),
+                    " ".join(choices or []),
+                    str(explanation or ''),
+                    str(subject or '')
+                ])
+                # Extract tokens (KR/EN/NUM) length>=2
+                cand = re.findall(r"[A-Za-z0-9가-힣]{2,}", text_pool)
+                # Simple stopword filter
+                stop = {"다음","다음중","다음은","다음의","그리고","및","어느","무엇","어떤","입니다","이다","해당","조건","정답","보기"}
+                filt = [w for w in cand if w not in stop]
+                uniq=[]
+                for w in filt:
+                    if w not in uniq:
+                        uniq.append(w)
+                needed = 2 - len(all_keywords)
+                all_keywords += uniq[:max(0, needed)]
+            concepts = ai_analysis.get("concepts", []) or []
+            if len(concepts) < 1 and all_keywords:
+                concepts = all_keywords[:1]
+
+            # 3. 문제 데이터 구성
+            
             # 3. 완전한 문제 데이터 구성
             problem_data = {
                 # 기본 정보
@@ -56,7 +82,7 @@ class ProblemAnalyzer:
                 "subject": subject,
 
                 # AI 분석 결과
-                "concepts": ai_analysis.get("concepts", []),
+                "concepts": concepts,
                 "keywords": all_keywords,
                 "difficulty": ai_analysis.get("difficulty", "중"),
 
