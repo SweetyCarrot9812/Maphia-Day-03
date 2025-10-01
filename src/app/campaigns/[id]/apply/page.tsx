@@ -81,7 +81,7 @@ export default function CampaignApplyPage({ params }: CampaignApplyPageProps) {
           .from("influencer_profiles")
           .select("id")
           .eq("user_id", user.id)
-          .single();
+          .single<{ id: string }>();
 
         if (profileError || !profile) {
           setErrorMessage("인플루언서 프로필을 찾을 수 없습니다.");
