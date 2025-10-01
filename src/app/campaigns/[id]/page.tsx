@@ -135,7 +135,17 @@ export default function CampaignDetailPage({ params }: CampaignDetailPageProps) 
       <div className="mx-auto max-w-4xl px-6 py-10">
         {/* Campaign Hero */}
         <div className="mb-8 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="h-64 bg-gradient-to-br from-slate-100 to-slate-200" />
+          {campaign.image_url ? (
+            <div className="h-64 w-full overflow-hidden bg-slate-100">
+              <img
+                src={campaign.image_url}
+                alt={campaign.title}
+                className="h-full w-full object-cover"
+              />
+            </div>
+          ) : (
+            <div className="h-64 bg-gradient-to-br from-slate-100 to-slate-200" />
+          )}
 
           <div className="p-8">
             {/* Status */}

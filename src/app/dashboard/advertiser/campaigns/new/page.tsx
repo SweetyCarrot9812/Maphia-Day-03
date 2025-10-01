@@ -18,6 +18,7 @@ export default function NewCampaignPage() {
     store_location: "",
     benefits: "",
     mission: "",
+    image_url: "",
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -109,6 +110,7 @@ export default function NewCampaignPage() {
             store_location: formState.store_location,
             benefits: formState.benefits,
             mission: formState.mission,
+            image_url: formState.image_url || null,
             status: "recruiting",
           })
           .select()
@@ -206,6 +208,21 @@ export default function NewCampaignPage() {
               placeholder="예: 서울시 강남구 테헤란로 123"
               className="rounded-md border border-slate-300 px-3 py-2 focus:border-slate-500 focus:outline-none"
             />
+          </label>
+
+          <label className="flex flex-col gap-2 text-sm text-slate-700">
+            이미지 URL
+            <input
+              type="url"
+              name="image_url"
+              value={formState.image_url}
+              onChange={handleChange}
+              placeholder="https://i.imgur.com/xxxxx.png"
+              className="rounded-md border border-slate-300 px-3 py-2 focus:border-slate-500 focus:outline-none"
+            />
+            <span className="text-xs text-slate-500">
+              imgur.com 등에 업로드한 이미지 URL을 입력하세요
+            </span>
           </label>
 
           <label className="flex flex-col gap-2 text-sm text-slate-700">

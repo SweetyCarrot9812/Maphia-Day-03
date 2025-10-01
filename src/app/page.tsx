@@ -172,8 +172,18 @@ export default function Home() {
                   href={`/campaigns/${campaign.id}`}
                   className="group flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md"
                 >
-                  {/* Campaign Image Placeholder */}
-                  <div className="h-48 bg-gradient-to-br from-slate-100 to-slate-200" />
+                  {/* Campaign Image */}
+                  {campaign.image_url ? (
+                    <div className="h-48 w-full overflow-hidden bg-slate-100">
+                      <img
+                        src={campaign.image_url}
+                        alt={campaign.title}
+                        className="h-full w-full object-cover transition group-hover:scale-105"
+                      />
+                    </div>
+                  ) : (
+                    <div className="h-48 bg-gradient-to-br from-slate-100 to-slate-200" />
+                  )}
 
                   <div className="flex flex-1 flex-col gap-3 p-6">
                     {/* Location Badge */}
