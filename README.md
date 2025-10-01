@@ -47,7 +47,17 @@ Vercel 프로젝트에서 다음 환경 변수를 설정하세요:
 
 ## 데이터베이스 스키마
 
-`database_schema.sql` 파일 참고
+### 초기 설정
+
+1. Supabase 프로젝트의 SQL Editor에서 `database_schema.sql` 파일 실행
+2. RLS 정책 수정을 위해 `fix_rls_policy.sql` 실행 (중요!)
+
+**주의**: `fix_rls_policy.sql`을 실행하지 않으면 회원가입 시 "프로필 생성에 실패했습니다" 오류가 발생합니다.
+
+### 샘플 데이터
+
+테스트를 위해 `sample_data.sql` 파일을 실행하여 샘플 캠페인을 생성할 수 있습니다.
+(먼저 Supabase Authentication에서 advertiser@test.com 계정을 수동으로 생성해야 합니다)
 
 ## Use Cases
 

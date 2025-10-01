@@ -83,11 +83,15 @@ export default function Home() {
     }
 
     if (isAuthenticated && user) {
+      const dashboardUrl = user.role === 'advertiser'
+        ? '/dashboard/advertiser'
+        : '/dashboard/applications';
+
       return (
         <div className="flex items-center gap-3 text-sm">
           <span className="text-slate-700">{user.email}</span>
           <Link
-            href="/dashboard"
+            href={dashboardUrl}
             className="rounded-md border border-slate-300 px-3 py-1.5 transition hover:bg-slate-50"
           >
             대시보드
