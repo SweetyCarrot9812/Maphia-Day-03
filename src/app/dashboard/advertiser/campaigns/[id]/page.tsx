@@ -303,7 +303,7 @@ export default function AdvertiserCampaignDetailPage({ params }: CampaignDetailP
                       key={application.id}
                       application={application}
                       onStatusChange={handleApplicationStatus}
-                      canManage={campaign.status !== "recruiting"}
+                      canManage={campaign.status === "recruiting"}
                     />
                   ))}
                 </div>
@@ -320,7 +320,7 @@ export default function AdvertiserCampaignDetailPage({ params }: CampaignDetailP
                       key={application.id}
                       application={application}
                       onStatusChange={handleApplicationStatus}
-                      canManage={campaign.status !== "recruiting"}
+                      canManage={campaign.status === "recruiting"}
                     />
                   ))}
                 </div>
@@ -337,7 +337,7 @@ export default function AdvertiserCampaignDetailPage({ params }: CampaignDetailP
                       key={application.id}
                       application={application}
                       onStatusChange={handleApplicationStatus}
-                      canManage={campaign.status !== "recruiting"}
+                      canManage={campaign.status === "recruiting"}
                     />
                   ))}
                 </div>
