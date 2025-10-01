@@ -13,13 +13,11 @@ export default function NewCampaignPage() {
   const [formState, setFormState] = useState({
     title: "",
     description: "",
-    category: "",
-    target_participants: "10",
-    recruitment_end_date: "",
-    experience_start_date: "",
-    experience_end_date: "",
+    max_participants: "10",
+    recruitment_end: "",
+    store_location: "",
     benefits: "",
-    mission_requirements: "",
+    mission: "",
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -35,7 +33,6 @@ export default function NewCampaignPage() {
 
       const supabase = getSupabaseBrowserClient();
 
-      // Check advertiser profile
       const { data: advertiserProfile } = await supabase
         .from("advertiser_profiles")
         .select("id")
@@ -56,7 +53,7 @@ export default function NewCampaignPage() {
   }, [user, router]);
 
   const handleChange = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       const { name, value } = event.target;
       setFormState((prev) => ({ ...prev, [name]: value }));
     },
@@ -78,7 +75,6 @@ export default function NewCampaignPage() {
       const supabase = getSupabaseBrowserClient();
 
       try {
-        // Get advertiser profile ID
         const { data: profile, error: profileError } = await supabase
           .from("advertiser_profiles")
           .select("id")
@@ -91,10 +87,7 @@ export default function NewCampaignPage() {
           return;
         }
 
-        // Validate dates
-        const recruitmentEnd = new Date(formState.recruitment_end_date);
-        const experienceStart = new Date(formState.experience_start_date);
-        const experienceEnd = new Date(formState.experience_end_date);
+        const recruitmentEnd = new Date(formState.recruitment_end);
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
@@ -104,32 +97,18 @@ export default function NewCampaignPage() {
           return;
         }
 
-        if (experienceStart <= recruitmentEnd) {
-          setErrorMessage("체험 시작일은 모집 마감일 이후여야 합니다.");
-          setIsSubmitting(false);
-          return;
-        }
-
-        if (experienceEnd <= experienceStart) {
-          setErrorMessage("체험 종료일은 시작일 이후여야 합니다.");
-          setIsSubmitting(false);
-          return;
-        }
-
-        // Create campaign
         const { data: campaign, error: campaignError } = await supabase
           .from("campaigns")
           .insert({
             advertiser_id: profile.id,
             title: formState.title,
             description: formState.description,
-            category: formState.category,
-            target_participants: parseInt(formState.target_participants),
-            recruitment_end_date: formState.recruitment_end_date,
-            experience_start_date: formState.experience_start_date,
-            experience_end_date: formState.experience_end_date,
-            benefits: formState.benefits || null,
-            mission_requirements: formState.mission_requirements || null,
+            max_participants: parseInt(formState.max_participants),
+            recruitment_start: new Date().toISOString(),
+            recruitment_end: new Date(formState.recruitment_end).toISOString(),
+            store_location: formState.store_location,
+            benefits: formState.benefits,
+            mission: formState.mission,
             status: "recruiting",
           })
           .select()
@@ -142,7 +121,6 @@ export default function NewCampaignPage() {
           return;
         }
 
-        // Success - redirect to campaign detail
         alert("캠페인이 등록되었습니다!");
         router.push(`/dashboard/advertiser/campaigns/${campaign.id}`);
       } catch (error) {
@@ -169,7 +147,6 @@ export default function NewCampaignPage() {
 
   return (
     <main className="min-h-screen bg-slate-50">
-      {/* Header */}
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <Link
@@ -192,7 +169,6 @@ export default function NewCampaignPage() {
           onSubmit={handleSubmit}
           className="flex flex-col gap-6 rounded-xl border border-slate-200 bg-white p-8 shadow-sm"
         >
-          {/* Title */}
           <label className="flex flex-col gap-2 text-sm text-slate-700">
             캠페인 제목 <span className="text-rose-500">*</span>
             <input
@@ -206,31 +182,6 @@ export default function NewCampaignPage() {
             />
           </label>
 
-          {/* Category */}
-          <label className="flex flex-col gap-2 text-sm text-slate-700">
-            카테고리 <span className="text-rose-500">*</span>
-            <select
-              name="category"
-              required
-              value={formState.category}
-              onChange={handleChange}
-              className="rounded-md border border-slate-300 px-3 py-2 focus:border-slate-500 focus:outline-none"
-            >
-              <option value="">선택해주세요</option>
-              <option value="식품">식품</option>
-              <option value="뷰티">뷰티</option>
-              <option value="패션">패션</option>
-              <option value="생활용품">생활용품</option>
-              <option value="가전">가전</option>
-              <option value="IT/전자">IT/전자</option>
-              <option value="여행">여행</option>
-              <option value="레저/스포츠">레저/스포츠</option>
-              <option value="교육">교육</option>
-              <option value="기타">기타</option>
-            </select>
-          </label>
-
-          {/* Description */}
           <label className="flex flex-col gap-2 text-sm text-slate-700">
             캠페인 설명 <span className="text-rose-500">*</span>
             <textarea
@@ -244,94 +195,74 @@ export default function NewCampaignPage() {
             />
           </label>
 
-          {/* Target Participants */}
+          <label className="flex flex-col gap-2 text-sm text-slate-700">
+            매장 위치 <span className="text-rose-500">*</span>
+            <input
+              type="text"
+              name="store_location"
+              required
+              value={formState.store_location}
+              onChange={handleChange}
+              placeholder="예: 서울시 강남구 테헤란로 123"
+              className="rounded-md border border-slate-300 px-3 py-2 focus:border-slate-500 focus:outline-none"
+            />
+          </label>
+
           <label className="flex flex-col gap-2 text-sm text-slate-700">
             모집 인원 <span className="text-rose-500">*</span>
             <input
               type="number"
-              name="target_participants"
+              name="max_participants"
               required
               min="1"
               max="100"
-              value={formState.target_participants}
+              value={formState.max_participants}
               onChange={handleChange}
               className="rounded-md border border-slate-300 px-3 py-2 focus:border-slate-500 focus:outline-none"
             />
           </label>
 
-          {/* Recruitment End Date */}
           <label className="flex flex-col gap-2 text-sm text-slate-700">
             모집 마감일 <span className="text-rose-500">*</span>
             <input
               type="date"
-              name="recruitment_end_date"
+              name="recruitment_end"
               required
-              value={formState.recruitment_end_date}
+              value={formState.recruitment_end}
               onChange={handleChange}
               min={new Date().toISOString().split("T")[0]}
               className="rounded-md border border-slate-300 px-3 py-2 focus:border-slate-500 focus:outline-none"
             />
           </label>
 
-          {/* Experience Dates */}
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="flex flex-col gap-2 text-sm text-slate-700">
-              체험 시작일 <span className="text-rose-500">*</span>
-              <input
-                type="date"
-                name="experience_start_date"
-                required
-                value={formState.experience_start_date}
-                onChange={handleChange}
-                min={formState.recruitment_end_date || new Date().toISOString().split("T")[0]}
-                className="rounded-md border border-slate-300 px-3 py-2 focus:border-slate-500 focus:outline-none"
-              />
-            </label>
-
-            <label className="flex flex-col gap-2 text-sm text-slate-700">
-              체험 종료일 <span className="text-rose-500">*</span>
-              <input
-                type="date"
-                name="experience_end_date"
-                required
-                value={formState.experience_end_date}
-                onChange={handleChange}
-                min={formState.experience_start_date || new Date().toISOString().split("T")[0]}
-                className="rounded-md border border-slate-300 px-3 py-2 focus:border-slate-500 focus:outline-none"
-              />
-            </label>
-          </div>
-
-          {/* Benefits */}
           <label className="flex flex-col gap-2 text-sm text-slate-700">
-            제공 혜택
+            제공 혜택 <span className="text-rose-500">*</span>
             <textarea
               name="benefits"
+              required
               value={formState.benefits}
               onChange={handleChange}
               rows={3}
-              placeholder="체험단에게 제공되는 혜택을 작성해주세요 (선택사항)"
+              placeholder="체험단에게 제공되는 혜택을 작성해주세요"
               className="rounded-md border border-slate-300 px-3 py-2 focus:border-slate-500 focus:outline-none"
             />
           </label>
 
-          {/* Mission Requirements */}
           <label className="flex flex-col gap-2 text-sm text-slate-700">
-            미션 안내
+            미션 안내 <span className="text-rose-500">*</span>
             <textarea
-              name="mission_requirements"
-              value={formState.mission_requirements}
+              name="mission"
+              required
+              value={formState.mission}
               onChange={handleChange}
               rows={3}
-              placeholder="체험단이 수행해야 할 미션을 작성해주세요 (선택사항)"
+              placeholder="체험단이 수행해야 할 미션을 작성해주세요"
               className="rounded-md border border-slate-300 px-3 py-2 focus:border-slate-500 focus:outline-none"
             />
           </label>
 
-          {/* Error Message */}
           {errorMessage && <p className="text-sm text-rose-500">{errorMessage}</p>}
 
-          {/* Submit Button */}
           <button
             type="submit"
             disabled={isSubmitting}
