@@ -177,7 +177,7 @@ export default function CampaignDetailPage({ params }: CampaignDetailPageProps) 
                 <div>
                   <p className="text-xs text-slate-500">모집 마감</p>
                   <p className="font-semibold text-slate-900">
-                    {new Date(campaign.recruitment_end_date).toLocaleDateString("ko-KR")}
+                    {new Date(campaign.recruitment_end).toLocaleDateString("ko-KR")}
                   </p>
                 </div>
               </div>
