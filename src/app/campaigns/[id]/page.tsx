@@ -167,7 +167,7 @@ export default function CampaignDetailPage({ params }: CampaignDetailPageProps) 
                 <div>
                   <p className="text-xs text-slate-500">모집 인원</p>
                   <p className="font-semibold text-slate-900">
-                    {campaign.target_participants}명
+                    {campaign.max_participants}명
                   </p>
                 </div>
               </div>
