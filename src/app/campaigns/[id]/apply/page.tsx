@@ -207,13 +207,11 @@ export default function CampaignApplyPage({ params }: CampaignApplyPageProps) {
               required
               value={formState.planned_visit_date}
               onChange={handleChange}
-              min={campaign.experience_start_date}
-              max={campaign.experience_end_date}
               className="rounded-md border border-slate-300 px-3 py-2 focus:border-slate-500 focus:outline-none"
             />
             <span className="text-xs text-slate-500">
-              체험 기간: {new Date(campaign.experience_start_date).toLocaleDateString("ko-KR")} ~{" "}
-              {new Date(campaign.experience_end_date).toLocaleDateString("ko-KR")}
+              모집 기간: {new Date(campaign.recruitment_start).toLocaleDateString("ko-KR")} ~{" "}
+              {new Date(campaign.recruitment_end).toLocaleDateString("ko-KR")}
             </span>
           </label>
 
