@@ -3,6 +3,7 @@ export type CurrentUser = {
   email: string | null;
   appMetadata: Record<string, unknown>;
   userMetadata: Record<string, unknown>;
+  role: string | null;
 };
 
 export type CurrentUserSnapshot =

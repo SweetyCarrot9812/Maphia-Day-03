@@ -37,20 +37,35 @@ export const CurrentUserProvider = ({
     try {
       const result = await supabase.auth.getUser();
 
-      const nextSnapshot = match(result)
-        .with({ data: { user: P.nonNullable } }, ({ data }) => ({
-          status: "authenticated" as const,
-          user: {
-            id: data.user.id,
-            email: data.user.email,
-            appMetadata: data.user.app_metadata ?? {},
-            userMetadata: data.user.user_metadata ?? {},
-          },
-        }))
-        .otherwise(() => ({ status: "unauthenticated" as const, user: null }));
+      if (result.data.user) {
+        // profiles 테이블에서 role 정보 가져오기
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", result.data.user.id)
+          .single();
 
-      setSnapshot(nextSnapshot);
-      queryClient.setQueryData(["currentUser"], nextSnapshot);
+        const nextSnapshot: CurrentUserSnapshot = {
+          status: "authenticated",
+          user: {
+            id: result.data.user.id,
+            email: result.data.user.email,
+            appMetadata: result.data.user.app_metadata ?? {},
+            userMetadata: result.data.user.user_metadata ?? {},
+            role: profile?.role ?? null,
+          },
+        };
+
+        setSnapshot(nextSnapshot);
+        queryClient.setQueryData(["currentUser"], nextSnapshot);
+      } else {
+        const nextSnapshot: CurrentUserSnapshot = {
+          status: "unauthenticated",
+          user: null,
+        };
+        setSnapshot(nextSnapshot);
+        queryClient.setQueryData(["currentUser"], nextSnapshot);
+      }
     } catch (error) {
       const fallbackSnapshot: CurrentUserSnapshot = {
         status: "unauthenticated",
