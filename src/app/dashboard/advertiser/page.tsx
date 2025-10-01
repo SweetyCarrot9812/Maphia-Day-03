@@ -236,7 +236,7 @@ export default function AdvertiserDashboardPage() {
                     <div className="flex-1">
                       <div className="mb-2 flex items-center gap-3">
                         {getStatusBadge(campaign.status)}
-                        <span className="text-sm text-slate-500">{campaign.category}</span>
+                        <span className="text-sm text-slate-500">{campaign.store_location}</span>
                       </div>
                       <h3 className="mb-2 text-xl font-semibold text-slate-900">
                         {campaign.title}
@@ -251,7 +251,7 @@ export default function AdvertiserDashboardPage() {
                     <div className="flex items-center gap-2 text-sm">
                       <Users className="h-4 w-4 text-slate-400" />
                       <span className="text-slate-600">
-                        목표: {campaign.target_participants}명
+                        목표: {campaign.max_participants}명
                       </span>
                     </div>
                     <div className="flex items-center gap-2 text-sm">
