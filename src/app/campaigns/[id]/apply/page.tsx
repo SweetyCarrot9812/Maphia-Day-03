@@ -106,7 +106,12 @@ export default function CampaignApplyPage({ params }: CampaignApplyPageProps) {
         // Create application
         const { error: applicationError } = await supabase
           .from("applications")
-          .insert({
+          .insert<{
+            campaign_id: string;
+            influencer_id: string;
+            motivation: string;
+            visit_date: string;
+          }>({
             campaign_id: campaignId,
             influencer_id: profile.id,
             motivation: formState.motivation,
