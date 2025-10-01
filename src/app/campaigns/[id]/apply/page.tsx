@@ -110,7 +110,7 @@ export default function CampaignApplyPage({ params }: CampaignApplyPageProps) {
             campaign_id: campaignId,
             influencer_id: profile.id,
             motivation: formState.motivation,
-            planned_visit_date: formState.planned_visit_date,
+            visit_date: formState.planned_visit_date,
           });
 
         if (applicationError) {
