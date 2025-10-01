@@ -138,11 +138,8 @@ export default function CampaignDetailPage({ params }: CampaignDetailPageProps) 
           <div className="h-64 bg-gradient-to-br from-slate-100 to-slate-200" />
 
           <div className="p-8">
-            {/* Category & Status */}
-            <div className="mb-4 flex items-center gap-3">
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-700">
-                {campaign.category}
-              </span>
+            {/* Status */}
+            <div className="mb-4">
               <span className="rounded-full bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-700">
                 모집 중
               </span>
