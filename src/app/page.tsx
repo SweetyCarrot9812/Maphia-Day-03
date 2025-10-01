@@ -23,7 +23,6 @@ export default function Home() {
   const [campaigns, setCampaigns] = useState<CampaignWithAdvertiser[]>([]);
   const [isLoadingCampaigns, setIsLoadingCampaigns] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState<string>("");
 
   useEffect(() => {
     const loadCampaigns = async () => {
@@ -65,17 +64,9 @@ export default function Home() {
         campaign.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         campaign.description?.toLowerCase().includes(searchQuery.toLowerCase());
 
-      const matchesCategory =
-        categoryFilter === "" || campaign.category === categoryFilter;
-
-      return matchesSearch && matchesCategory;
+      return matchesSearch;
     });
-  }, [campaigns, searchQuery, categoryFilter]);
-
-  const categories = useMemo(() => {
-    const uniqueCategories = new Set(campaigns.map((c) => c.category));
-    return Array.from(uniqueCategories).sort();
-  }, [campaigns]);
+  }, [campaigns, searchQuery]);
 
   const authActions = useMemo(() => {
     if (isLoading) {
@@ -149,9 +140,9 @@ export default function Home() {
           </p>
         </section>
 
-        {/* Search and Filter */}
-        <section className="mb-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="relative flex-1 max-w-md">
+        {/* Search */}
+        <section className="mb-8">
+          <div className="relative max-w-md">
             <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
@@ -161,19 +152,6 @@ export default function Home() {
               className="w-full rounded-md border border-slate-300 py-2 pl-10 pr-4 focus:border-slate-500 focus:outline-none"
             />
           </div>
-
-          <select
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            className="rounded-md border border-slate-300 px-4 py-2 focus:border-slate-500 focus:outline-none"
-          >
-            <option value="">전체 카테고리</option>
-            {categories.map((category) => (
-              <option key={category} value={category}>
-                {category}
-              </option>
-            ))}
-          </select>
         </section>
 
         {/* Campaigns Grid */}
@@ -198,10 +176,10 @@ export default function Home() {
                   <div className="h-48 bg-gradient-to-br from-slate-100 to-slate-200" />
 
                   <div className="flex flex-1 flex-col gap-3 p-6">
-                    {/* Category Badge */}
+                    {/* Location Badge */}
                     <div className="flex items-center justify-between">
                       <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                        {campaign.category}
+                        {campaign.store_location}
                       </span>
                       <span className="text-xs text-slate-500">
                         {campaign.advertiser.business_name}
@@ -220,9 +198,9 @@ export default function Home() {
 
                     {/* Info */}
                     <div className="mt-auto flex items-center justify-between border-t border-slate-100 pt-4 text-xs text-slate-500">
-                      <span>모집 {campaign.target_participants}명</span>
+                      <span>모집 {campaign.max_participants}명</span>
                       <span>
-                        {new Date(campaign.recruitment_end_date).toLocaleDateString("ko-KR")}까지
+                        {new Date(campaign.recruitment_end).toLocaleDateString("ko-KR")}까지
                       </span>
                     </div>
                   </div>
