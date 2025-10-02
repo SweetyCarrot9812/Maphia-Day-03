@@ -37,7 +37,9 @@ class FirebaseService:
             # Firebase 초기화
             if not firebase_admin._apps:
                 cred = credentials.Certificate(str(cred_path))
-                firebase_admin.initialize_app(cred)
+                firebase_admin.initialize_app(cred, {
+                    'storageBucket': 'hanoa-97393.firebasestorage.app'
+                })
 
             self.db = firestore.client()
             self.initialized = True
@@ -47,11 +49,11 @@ class FirebaseService:
             print(f"[ERROR] Firebase 초기화 실패: {e}")
             self.initialized = False
 
-    def upload_problem(self, problem_data: Dict[str, Any]) -> bool:
+    def upload_problem(self, problem_data: Dict[str, Any]) -> Dict[str, Any]:
         """문제를 Firestore에 업로드"""
         if not self.initialized:
             print("[WARNING] Firebase가 초기화되지 않았습니다.")
-            return False
+            return {'success': False, 'message': 'Firebase not initialized'}
 
         try:
             # Firestore 컬렉션 참조
@@ -70,17 +72,17 @@ class FirebaseService:
             doc_ref.set(problem_data)
 
             print(f"[SUCCESS] 문제 업로드 성공: {problem_data['id']}")
-            return True
+            return {'success': True, 'id': problem_data['id'], 'message': 'Upload successful'}
 
         except Exception as e:
             print(f"[ERROR] 문제 업로드 실패: {e}")
-            return False
+            return {'success': False, 'message': str(e)}
 
-    def upload_concept(self, concept_data: Dict[str, Any]) -> bool:
+    def upload_concept(self, concept_data: Dict[str, Any]) -> Dict[str, Any]:
         """개념을 Firestore에 업로드"""
         if not self.initialized:
             print("[WARNING] Firebase가 초기화되지 않았습니다.")
-            return False
+            return {'success': False, 'message': 'Firebase not initialized'}
 
         try:
             # Firestore 컬렉션 참조
@@ -99,14 +101,101 @@ class FirebaseService:
             doc_ref.set(concept_data)
 
             print(f"[SUCCESS] 개념 업로드 성공: {concept_data['id']}")
-            return True
+            return {'success': True, 'id': concept_data['id'], 'message': 'Upload successful'}
 
         except Exception as e:
             print(f"[ERROR] 개념 업로드 실패: {e}")
-            return False
+            return {'success': False, 'message': str(e)}
+
+    def add_concept(self, concept_data: Dict[str, Any]) -> Dict[str, Any]:
+        """개념을 Firestore에 추가 (nursing_concepts 컬렉션)"""
+        if not self.initialized:
+            print("[WARNING] Firebase가 초기화되지 않았습니다.")
+            return {'success': False, 'message': 'Firebase not initialized'}
+
+        try:
+            # Firestore 컬렉션 참조
+            concepts_ref = self.db.collection('nursing_concepts')
+
+            # 개념 ID 확인 (없으면 생성)
+            if 'id' not in concept_data:
+                concept_data['id'] = concepts_ref.document().id
+
+            # 타임스탬프 추가
+            concept_data['uploadedAt'] = firestore.SERVER_TIMESTAMP
+            concept_data['lastModified'] = firestore.SERVER_TIMESTAMP
+
+            # Firestore 문서 생성/업데이트
+            doc_ref = concepts_ref.document(concept_data['id'])
+            doc_ref.set(concept_data)
+
+            print(f"[SUCCESS] 개념 추가 성공: {concept_data['id']}")
+            return {'success': True, 'id': concept_data['id'], 'message': 'Concept added successfully'}
+
+        except Exception as e:
+            print(f"[ERROR] 개념 추가 실패: {e}")
+            return {'success': False, 'message': str(e)}
+
+    def add_medical_concept(self, concept_data: Dict[str, Any]) -> Dict[str, Any]:
+        """의학 개념을 Firestore에 추가 (medical_concepts 컬렉션)"""
+        if not self.initialized:
+            print("[WARNING] Firebase가 초기화되지 않았습니다.")
+            return {'success': False, 'message': 'Firebase not initialized'}
+
+        try:
+            # Firestore 컬렉션 참조
+            concepts_ref = self.db.collection('medical_concepts')
+
+            # 개념 ID 확인 (없으면 생성)
+            if 'id' not in concept_data:
+                concept_data['id'] = concepts_ref.document().id
+
+            # 타임스탬프 추가
+            concept_data['uploadedAt'] = firestore.SERVER_TIMESTAMP
+            concept_data['lastModified'] = firestore.SERVER_TIMESTAMP
+
+            # Firestore 문서 생성/업데이트
+            doc_ref = concepts_ref.document(concept_data['id'])
+            doc_ref.set(concept_data)
+
+            print(f"[SUCCESS] 의학 개념 추가 성공: {concept_data['id']}")
+            return {'success': True, 'id': concept_data['id'], 'message': 'Medical concept added successfully'}
+
+        except Exception as e:
+            print(f"[ERROR] 의학 개념 추가 실패: {e}")
+            return {'success': False, 'message': str(e)}
+
+    def upload_medical_problem(self, problem_data: Dict[str, Any]) -> Dict[str, Any]:
+        """의학 문제를 Firestore에 업로드"""
+        if not self.initialized:
+            print("[WARNING] Firebase가 초기화되지 않았습니다.")
+            return {'success': False, 'message': 'Firebase not initialized'}
+
+        try:
+            # Firestore 컬렉션 참조 (의학 문제용 별도 컬렉션)
+            problems_ref = self.db.collection('medical_problems')
+
+            # 문제 ID 확인 (없으면 생성)
+            if 'id' not in problem_data:
+                problem_data['id'] = problems_ref.document().id
+
+            # 타임스탬프 추가
+            problem_data['uploadedAt'] = firestore.SERVER_TIMESTAMP
+            problem_data['lastModified'] = firestore.SERVER_TIMESTAMP
+
+            # Firestore 문서 생성/업데이트
+            doc_ref = problems_ref.document(problem_data['id'])
+            doc_ref.set(problem_data)
+
+            print(f"[SUCCESS] 의학 문제 업로드 성공: {problem_data['id']}")
+            return {'success': True, 'id': problem_data['id'], 'message': 'Upload successful'}
+
+        except Exception as e:
+            print(f"[ERROR] 의학 문제 업로드 실패: {e}")
+            return {'success': False, 'message': str(e)}
 
     def get_problems(self, subject: Optional[str] = None, limit: int = 100) -> List[Dict]:
-        """Firestore에서 문제 목록 조회"""
+        """Firestore에서 문제 목록 조회 (nursing_problems 컬렉션)"""
         if not self.initialized:
             return []
 
@@ -135,6 +224,53 @@ class FirebaseService:
         except Exception as e:
             print(f"[ERROR] 문제 조회 실패: {e}")
             return []
+
+    def get_nursing_problems(self, subject: Optional[str] = None, limit: int = 100) -> List[Dict]:
+        """Firestore에서 간호 문제 목록 조회"""
+        return self.get_problems(subject=subject, limit=limit)
+
+    def get_medical_problems(self, subject: Optional[str] = None, limit: int = 100) -> List[Dict]:
+        """Firestore에서 의학 문제 목록 조회"""
+        if not self.initialized:
+            return []
+
+        try:
+            query = self.db.collection('medical_problems')
+
+            # 과목별 필터링
+            if subject:
+                query = query.where('subject', '==', subject)
+
+            # 최신순 정렬
+            query = query.order_by('uploadedAt', direction=firestore.Query.DESCENDING)
+            query = query.limit(limit)
+
+            # 문서 가져오기
+            docs = query.get()
+            problems = []
+
+            for doc in docs:
+                problem = doc.to_dict()
+                problem['id'] = doc.id
+                problems.append(problem)
+
+            return problems
+
+        except Exception as e:
+            print(f"[ERROR] 의학 문제 조회 실패: {e}")
+            return []
+
+    def get_all_problems(self, subject: Optional[str] = None, limit: int = 100) -> List[Dict]:
+        """Firestore에서 모든 문제 목록 조회 (간호 + 의학)"""
+        nursing = self.get_nursing_problems(subject=subject, limit=limit//2)
+        medical = self.get_medical_problems(subject=subject, limit=limit//2)
+
+        # 합치고 최신순 정렬
+        all_problems = nursing + medical
+        all_problems.sort(key=lambda x: x.get('uploadedAt', ''), reverse=True)
+
+        # limit 적용
+        return all_problems[:limit]
 
     def get_concepts(self, subject: Optional[str] = None, limit: int = 100) -> List[Dict]:
         """Firestore에서 개념 목록 조회"""
