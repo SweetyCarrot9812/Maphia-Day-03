@@ -9,6 +9,7 @@ import asyncio
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import openai
+from api_usage_tracker import api_tracker
 import google.generativeai as genai
 from dotenv import load_dotenv
 import firebase_admin
@@ -151,25 +152,25 @@ class BatchQuestionGenerator:
             if model == "gemini-2.5-flash":
                 # Use Gemini for image-based questions
                 return await self._generate_with_gemini(prompt, question_type)
-            elif model == "gpt-5":
-                # Use GPT-5 for complex questions
-                return await self._generate_with_gpt5(prompt, question_type)
+            elif model == "gpt-4o":
+                # Use GPT-4o for complex questions
+                return await self._generate_with_gpt4o(prompt, question_type)
             else:
-                # Default to GPT-5-mini
-                return await self._generate_with_gpt5_mini(prompt, question_type)
+                # Default to GPT-4o-mini
+                return await self._generate_with_gpt4o_mini(prompt, question_type)
         except Exception as e:
             print(f"Model {model} failed: {e}")
             return None
 
-    async def _generate_with_gpt5_mini(
+    async def _generate_with_gpt4o_mini(
         self,
         prompt: str,
         question_type: QuestionType
     ) -> Dict[str, Any]:
-        """Generate question using GPT-5-mini"""
+        """Generate question using GPT-4o-mini"""
 
         response = self.openai_client.chat.completions.create(
-            model="gpt-5-mini",  # Using actual GPT-5 mini
+            model="gpt-4o-mini",  # Using actual GPT-4o-mini
             messages=[
                 {"role": "system", "content": "You are a medical education expert creating examination questions. Always return valid JSON."},
                 {"role": "user", "content": prompt}
@@ -181,20 +182,20 @@ class BatchQuestionGenerator:
 
         question_data = json.loads(response.choices[0].message.content)
         question_data['type'] = question_type.value
-        question_data['generated_by'] = 'gpt-5-mini'
+        question_data['generated_by'] = 'gpt-4o-mini'
         question_data['timestamp'] = datetime.now().isoformat()
 
         return self._format_question(question_data, question_type)
 
-    async def _generate_with_gpt5(
+    async def _generate_with_gpt4o(
         self,
         prompt: str,
         question_type: QuestionType
     ) -> Dict[str, Any]:
-        """Generate complex question using GPT-5"""
+        """Generate complex question using GPT-4o"""
 
         response = self.openai_client.chat.completions.create(
-            model="gpt-5",  # Using actual GPT-5
+            model="gpt-4o",  # Using actual GPT-4o
             messages=[
                 {"role": "system", "content": "You are a senior medical education expert creating complex clinical examination questions. Ensure high clinical accuracy and reasoning. Always return valid JSON."},
                 {"role": "user", "content": prompt}
@@ -206,7 +207,7 @@ class BatchQuestionGenerator:
 
         question_data = json.loads(response.choices[0].message.content)
         question_data['type'] = question_type.value
-        question_data['generated_by'] = 'gpt-5'
+        question_data['generated_by'] = 'gpt-4o'
         question_data['timestamp'] = datetime.now().isoformat()
 
         return self._format_question(question_data, question_type)
@@ -244,6 +245,20 @@ IMPORTANT: Return only valid JSON with these fields:
             response = self.gemini_model.generate_content([full_prompt, image_data])
         else:
             response = self.gemini_model.generate_content(full_prompt)
+
+        # Track API usage (best-effort)
+        try:
+            usage = getattr(response, 'usage_metadata', None) or getattr(response, 'usageMetadata', None)
+            if usage:
+                in_tok = int(getattr(usage, 'prompt_token_count', 0) or usage.get('prompt_token_count', 0)) if hasattr(usage, '__dict__') else int(usage.get('prompt_token_count', 0))
+                out_tok = int(getattr(usage, 'candidates_token_count', 0) or usage.get('candidates_token_count', 0)) if hasattr(usage, '__dict__') else int(usage.get('candidates_token_count', 0))
+            else:
+                # If image is present, just approximate using text parts only
+                in_tok = api_tracker.estimate_tokens(full_prompt)
+                out_tok = api_tracker.estimate_tokens(getattr(response, 'text', '') or '')
+            api_tracker.track_usage('gemini-2.0-flash-exp', in_tok, out_tok)
+        except Exception:
+            pass
 
         # Parse the response
         try:
