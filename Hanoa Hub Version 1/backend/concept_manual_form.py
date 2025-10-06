@@ -1,21 +1,21 @@
 """
-Fitness Manual Input Form - Exercise and Nutrition Concepts
+Manual Concept Input Form - Simplified Version without AI Analysis
 """
 import streamlit as st
 import uuid
 from datetime import datetime
 
 
-def handle_fitness_image_upload():
-    """Handle image upload with automatic compression for fitness concepts"""
+def handle_image_upload():
+    """Handle image upload with automatic compression"""
     st.subheader("[IMAGE] 이미지 업로드 (선택사항)")
 
     uploaded_images = st.file_uploader(
-        "운동/영양 관련 이미지 (여러 개 선택 가능)",
+        "개념 관련 이미지 (여러 개 선택 가능)",
         type=['png', 'jpg', 'jpeg', 'webp'],
         accept_multiple_files=True,
-        help="운동 폼, 영양 차트, 음식 사진 등을 업로드하세요 (PNG, JPG, JPEG, WebP 지원)",
-        key="fitness_images"
+        help="개념과 관련된 의료 이미지, 도식, 차트 등을 업로드하세요 (PNG, JPG, JPEG, WebP 지원)",
+        key="concept_images"
     )
 
     processed_images = []
@@ -64,50 +64,30 @@ def handle_fitness_image_upload():
                 st.info(f"[INFO] 추가 {len(compressed_images)-3}개 이미지")
 
             # Store in session state for later Firebase upload
-            st.session_state.fitness_compressed_images = compressed_images
+            st.session_state.compressed_images = compressed_images
             st.info("[INFO] 이미지가 준비되었습니다. 개념 정보를 입력하고 [SAVE] 버튼을 누르면 저장됩니다.")
         else:
             st.error("[ERROR] 이미지 압축에 실패했습니다")
 
     # Check if there are compressed images in session state
-    if 'fitness_compressed_images' in st.session_state and not uploaded_images:
-        compressed_images = st.session_state.fitness_compressed_images
+    if 'compressed_images' in st.session_state and not uploaded_images:
+        compressed_images = st.session_state.compressed_images
         st.info(f"[READY] {len(compressed_images)}개 압축된 이미지가 저장 대기 중입니다")
         processed_images = compressed_images
 
-    return st.session_state.get('fitness_compressed_images', [])
+    return st.session_state.get('compressed_images', [])
 
 
-def fitness_concept_input_form():
-    """Manual form for inputting fitness and nutrition concepts"""
-    st.subheader("🏋️ 운동/영양 개념 수동 입력")
+def concept_manual_input_form():
+    """Manual form for inputting medical concepts without AI analysis"""
+    st.subheader("[MANUAL] 의학 개념 수동 입력")
 
     # Handle image upload outside of form
-    handle_fitness_image_upload()
+    handle_image_upload()
 
     st.divider()
 
-    # Category selection OUTSIDE form for conditional logic
-    concept_category = st.selectbox(
-        "분류 *",
-        options=["운동", "영양", "건강"],
-        help="개념의 주요 분류를 선택하세요",
-        key="fitness_concept_category_selector"
-    )
-
-    # Exercise subcategory OUTSIDE form for conditional logic
-    exercise_subcategory = None
-    if concept_category == "운동":
-        exercise_subcategory = st.selectbox(
-            "운동 종목",
-            options=["해당 없음", "헬스", "크로스핏"],
-            help="운동 종목을 선택하세요",
-            key="fitness_exercise_subcategory_selector"
-        )
-
-    st.divider()
-
-    with st.form("fitness_manual_form"):
+    with st.form("concept_manual_form"):
 
         # Manual input fields based on user requirements
         st.subheader("[INPUT] 개념 정보 직접 입력")
@@ -115,98 +95,44 @@ def fitness_concept_input_form():
         col1, col2 = st.columns(2)
 
         with col1:
-
             concept_text = st.text_area(
-                "개념 설명",
+                "개념 원문",
                 height=150,
-                help="운동 방법, 영양 정보 등을 상세히 입력하세요",
-                key="fitness_concept_text"
+                help="개념에 대한 상세한 설명을 입력하세요 (선택사항)",
+                key="concept_original_text"
             )
 
             keywords = st.text_input(
                 "keywords",
-                help="핵심 키워드를 쉼표로 구분하여 입력 (예: bench_press, chest, compound)",
-                key="fitness_keywords"
+                help="핵심 키워드를 쉼표로 구분하여 입력 (예: 무균술, 감염관리, 수술)",
+                key="concept_keywords"
             )
 
-            # Conditional fields based on category
-            if concept_category == "운동":
-
-                # 운동명 입력
-                exercise_name = st.text_input(
-                    "운동명",
-                    help="운동 이름을 입력하세요 (예: 벤치프레스, Fran, 데드리프트)",
-                    key="fitness_exercise_name"
-                )
-
-                exercise_type = st.selectbox(
-                    "운동 유형",
-                    options=["해당 없음", "상체", "하체", "전신", "코어", "유산소", "유연성"],
-                    help="운동이 주로 타겟하는 부위를 선택하세요",
-                    key="fitness_exercise_type"
-                )
-
-                exercise_equipment = st.multiselect(
-                    "필요 장비",
-                    options=["해당 없음", "맨몸", "덤벨", "바벨", "머신", "케틀벨", "밴드", "기타"],
-                    help="운동에 필요한 장비를 선택하세요",
-                    key="fitness_equipment"
-                )
-
-                # 크로스핏 전용 필드
-                if exercise_subcategory == "크로스핏":
-                    reps = st.text_input(
-                        "Reps (반복 횟수)",
-                        help="반복 횟수를 입력하세요 (예: 21-15-9, 10-9-8-7-6-5-4-3-2-1)",
-                        key="fitness_reps"
-                    )
-            elif concept_category == "영양":
-                nutrition_type = st.selectbox(
-                    "영양소 유형",
-                    options=["해당 없음", "단백질", "탄수화물", "지방", "비타민", "미네랄", "종합"],
-                    help="주요 영양소 유형을 선택하세요",
-                    key="fitness_nutrition_type"
-                )
-
-                meal_type = st.multiselect(
-                    "식사 시간",
-                    options=["아침", "점심", "저녁", "간식", "운동 전", "운동 후"],
-                    help="적합한 식사 시간을 선택하세요",
-                    key="fitness_meal_type"
-                )
-            # 건강 카테고리는 별도 필드 없음
-
-        with col2:
-            difficulty = st.selectbox(
-                "난이도",
-                options=["해당 없음", "초보", "중급", "고급", "전문가"],
-                help="개념의 난이도를 선택하세요",
-                key="fitness_difficulty"
-            )
-
-            target_goal = st.multiselect(
-                "목표",
-                options=["해당 없음", "근력 향상", "근비대", "체지방 감소", "지구력 향상", "유연성 향상", "건강 유지"],
-                help="이 개념이 도움이 되는 목표를 선택하세요",
-                key="fitness_target_goal"
-            )
-
-            tags = st.text_input(
-                "tags",
-                help="추가 태그를 쉼표로 구분하여 입력 (선택사항)",
-                key="fitness_tags"
-            )
-
-            concepts = st.text_input(
-                "concepts",
-                help="주요 개념을 쉼표로 구분하여 입력 (선택사항)",
-                key="fitness_concepts"
-            )
 
             related_concepts = st.text_input(
                 "related_concepts",
                 help="연관 개념을 쉼표로 구분하여 입력 (선택사항)",
-                key="fitness_related_concepts"
+                key="concept_related_concepts"
+            )
+
+        with col2:
+            concepts = st.text_input(
+                "concepts",
+                help="관련 개념 목록을 쉼표로 구분하여 입력 (선택사항)",
+                key="concept_concepts"
+            )
+
+            tags = st.text_input(
+                "tags",
+                help="태그를 쉼표로 구분하여 입력 (선택사항)",
+                key="concept_tags"
+            )
+
+            category = st.selectbox(
+                "category *",
+                options=["간호", "의학", "공통", "기타"],
+                help="개념이 속하는 분야를 선택하세요",
+                key="concept_category"
             )
 
         # Duplicate check settings
@@ -217,7 +143,7 @@ def fitness_concept_input_form():
             value=0.92,
             step=0.01,
             help="이 값 이상의 유사도를 가진 개념이 있으면 중복으로 판단 (권장: 0.92-0.95)",
-            key="fitness_duplicate_threshold"
+            key="concept_duplicate_threshold"
         )
 
         st.info("""
@@ -232,7 +158,7 @@ def fitness_concept_input_form():
 
         if submitted:
             # Get compressed images from session state
-            compressed_images = st.session_state.get('fitness_compressed_images', [])
+            compressed_images = st.session_state.get('compressed_images', [])
 
             # Upload compressed images to Firebase Storage now
             processed_images = []
@@ -244,7 +170,7 @@ def fitness_concept_input_form():
                     # Generate unique filename
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                     unique_id = str(uuid.uuid4())[:8]
-                    file_name = f"fitness_{timestamp}_{unique_id}.{img_data['file_ext']}"
+                    file_name = f"{timestamp}_{unique_id}.{img_data['file_ext']}"
 
                     # Save to local first
                     local_path = image_processor.save_to_local(img_data['compressed_bytes'], file_name)
@@ -271,45 +197,28 @@ def fitness_concept_input_form():
                 if processed_images:
                     st.success(f"[SUCCESS] {len(processed_images)}개 이미지 Firebase 업로드 완료!")
 
-            # Validate required fields
+            # Validate required fields - allow saving with just images or keywords
             missing_fields = []
             has_content = bool(concept_text.strip()) or bool(keywords.strip()) or bool(processed_images)
 
             if not has_content:
-                st.error("[ERROR] 개념 설명, keywords, 또는 이미지 중 하나는 반드시 입력해야 합니다")
+                st.error("[ERROR] 개념 원문, keywords, 또는 이미지 중 하나는 반드시 입력해야 합니다")
             else:
-                # Create concept data structure (filter out "해당 없음")
+                # Create concept data structure
                 concept_data = {
                     'id': str(uuid.uuid4()),
-                    'type': 'fitness_concept',
-                    'category': concept_category,  # 운동 or 영양
-                    'concept_text': concept_text.strip() if concept_text else '',
+                    'type': 'concept',
+                    'original_text': concept_text.strip() if concept_text else '',
                     'keywords': [k.strip() for k in keywords.split(',') if k.strip()] if keywords else [],
-                    'difficulty': difficulty if difficulty != "해당 없음" else "",
-                    'target_goal': [goal for goal in target_goal if goal != "해당 없음"],
-                    'tags': [t.strip() for t in tags.split(',') if t.strip()] if tags else [],
-                    'concepts': [c.strip() for c in concepts.split(',') if c.strip()] if concepts else [],
                     'related_concepts': [r.strip() for r in related_concepts.split(',') if r.strip()] if related_concepts else [],
+                    'concepts': [c.strip() for c in concepts.split(',') if c.strip()] if concepts else [],
+                    'tags': [t.strip() for t in tags.split(',') if t.strip()] if tags else [],
+                    'category': category,
                     'created_at': datetime.now().isoformat(),
                     'hasImage': bool(processed_images),
                     'images': processed_images if processed_images else [],
                     'createdBy': 'streamlit_user'
                 }
-
-                # Add category-specific fields (filter out "해당 없음")
-                if concept_category == "운동":
-                    concept_data['exercise_subcategory'] = exercise_subcategory if exercise_subcategory != "해당 없음" else ""
-                    concept_data['exercise_name'] = exercise_name.strip() if exercise_name else ""
-                    concept_data['exercise_type'] = exercise_type if exercise_type != "해당 없음" else ""
-                    concept_data['equipment'] = [eq for eq in exercise_equipment if eq != "해당 없음"]
-
-                    # 크로스핏 전용 필드
-                    if exercise_subcategory == "크로스핏":
-                        concept_data['reps'] = reps.strip() if reps else ""
-                elif concept_category == "영양":
-                    concept_data['nutrition_type'] = nutrition_type if nutrition_type != "해당 없음" else ""
-                    concept_data['meal_type'] = meal_type
-                # 건강 카테고리는 별도 필드 없음
 
                 # === Step 1: Duplicate Check ===
                 st.header("[STEP 1] 중복 검사")
@@ -317,18 +226,18 @@ def fitness_concept_input_form():
                 with st.spinner("[SEARCH] 유사 개념 검색 중..."):
                     try:
                         from rag_engine_multi_domain import multi_domain_rag_engine
+                        from rag_engine import rag_engine
 
-                        # Use fitness_concepts collection
-                        collection_name = 'fitness_concepts'
-                        collection = multi_domain_rag_engine.chroma_client.get_or_create_collection(
-                            collection_name,
-                            metadata={
-                                "description": "Fitness and nutrition knowledge base",
-                                "domain": "fitness",
-                                "embedding_model": "models/text-embedding-004",
-                                "embedding_dim": 768
-                            }
-                        )
+                        # Select collection based on category
+                        category_lower = concept_data['category'].lower()
+                        if category_lower in ['간호', '의학', '공통', '기타']:
+                            collection_name = 'medical_concepts'
+                        elif category_lower in ['운동', '영양', '건강']:
+                            collection_name = 'fitness_concepts'
+                        else:
+                            collection_name = 'medical_concepts'  # Default
+
+                        collection = multi_domain_rag_engine.chroma_client.get_or_create_collection(collection_name)
 
                         # Search for similar concepts
                         search_parts = []
@@ -336,12 +245,12 @@ def fitness_concept_input_form():
                             search_parts.append(concept_text)
                         if concept_data['keywords']:
                             search_parts.append(' '.join(concept_data['keywords']))
-                        search_text = ' '.join(search_parts) if search_parts else "fitness concept"
-
+                        search_text = ' '.join(search_parts) if search_parts else "concept"
+                        search_embedding = rag_engine.generate_embedding(search_text)
                         results = collection.query(
-                            query_texts=[search_text],
+                            query_embeddings=[search_embedding],
                             n_results=5,
-                            where={"type": "fitness_concept"}
+                            where={"type": "concept"}
                         )
 
                         max_similarity = 0.0
@@ -381,41 +290,37 @@ def fitness_concept_input_form():
 
                     with st.spinner("[SAVE] 벡터 임베딩 및 저장 중..."):
                         try:
+                            # Select correct collection for saving
+                            from rag_engine_multi_domain import multi_domain_rag_engine
+                            category_lower = concept_data['category'].lower()
+                            if category_lower in ['간호', '의학', '공통', '기타']:
+                                save_collection_name = 'medical_concepts'
+                            elif category_lower in ['운동', '영양', '건강']:
+                                save_collection_name = 'fitness_concepts'
+                            else:
+                                save_collection_name = 'medical_concepts'  # Default
+
+                            save_collection = multi_domain_rag_engine.chroma_client.get_or_create_collection(save_collection_name)
+
                             # Create full document for embedding
                             doc_parts = []
-                            doc_parts.append(f"분류: {concept_data['category']}")
-                            if concept_data['concept_text']:
-                                doc_parts.append(f"설명: {concept_data['concept_text']}")
+                            if concept_data['original_text']:
+                                doc_parts.append(f"개념: {concept_data['original_text']}")
                             if concept_data['keywords']:
                                 doc_parts.append(f"키워드: {', '.join(concept_data['keywords'])}")
-                            if concept_data['difficulty']:
-                                doc_parts.append(f"난이도: {concept_data['difficulty']}")
-                            if concept_data['target_goal']:
-                                doc_parts.append(f"목표: {', '.join(concept_data['target_goal'])}")
-
-                            # Add category-specific info
-                            if concept_category == "운동":
-                                if concept_data.get('exercise_type'):
-                                    doc_parts.append(f"운동 유형: {concept_data['exercise_type']}")
-                                if concept_data.get('equipment'):
-                                    doc_parts.append(f"장비: {', '.join(concept_data['equipment'])}")
-                            elif concept_category == "영양":
-                                if concept_data.get('nutrition_type'):
-                                    doc_parts.append(f"영양소: {concept_data['nutrition_type']}")
-                                if concept_data.get('meal_type'):
-                                    doc_parts.append(f"식사: {', '.join(concept_data['meal_type'])}")
-                            # 건강 카테고리는 별도 필드 없음
-
+                            if concept_data['related_concepts']:
+                                doc_parts.append(f"연관개념: {', '.join(concept_data['related_concepts'])}")
+                            doc_parts.append(f"분야: {concept_data['category']}")
                             if concept_data['tags']:
                                 doc_parts.append(f"태그: {', '.join(concept_data['tags'])}")
                             if concept_data['hasImage']:
                                 doc_parts.append(f"이미지: {len(concept_data['images'])}개 첨부")
 
-                            full_document = '\n'.join(doc_parts)
+                            full_document = '\n'.join(doc_parts) if doc_parts else f"분야: {concept_data['category']}"
 
                             # Prepare metadata
-                            title_text = concept_data['concept_text'] or ', '.join(concept_data['keywords']) or f"{concept_data['category']} 개념"
-                            desc_text = concept_data['concept_text'] or f"{concept_data['category']} - {concept_data['difficulty']}"
+                            title_text = concept_data['original_text'] or ', '.join(concept_data['keywords']) or f"{concept_data['category']} 개념"
+                            desc_text = concept_data['original_text'] or ', '.join(concept_data['keywords']) or f"{concept_data['category']} 분야 개념"
 
                             # Extract image URLs for metadata
                             image_url = ""
@@ -442,10 +347,8 @@ def fitness_concept_input_form():
                                 'title': title_text[:100],
                                 'description': desc_text[:500],
                                 'category': concept_data['category'],
-                                'difficulty': concept_data['difficulty'] if concept_data['difficulty'] else "",
                                 'keywords': ', '.join(concept_data['keywords']),
                                 'tags': ', '.join(concept_data['tags']),
-                                'target_goal': ', '.join(concept_data['target_goal']),
                                 'createdBy': concept_data['createdBy'],
                                 'createdAt': concept_data['created_at'],
                                 'hasImage': concept_data['hasImage'],
@@ -453,24 +356,27 @@ def fitness_concept_input_form():
                                 'imageUrls': image_urls,
                                 'localImagePath': local_image_path,
                                 'imageCount': len(concept_data['images']) if concept_data['images'] else 0,
-                                'type': 'fitness_concept'
+                                'type': 'concept'
                             }
 
-                            # Add category-specific metadata (only if not empty)
-                            if concept_category == "운동":
-                                metadata['exercise_type'] = concept_data.get('exercise_type', '')
-                                metadata['equipment'] = ', '.join(concept_data.get('equipment', []))
-                            elif concept_category == "영양":
-                                metadata['nutrition_type'] = concept_data.get('nutrition_type', '')
-                                metadata['meal_type'] = ', '.join(concept_data.get('meal_type', []))
-                            # 건강 카테고리는 별도 메타데이터 없음
+                            # Generate 768d embedding explicitly with gemini-embedding-001
+                            import google.generativeai as genai
+                            result = genai.embed_content(
+                                model="gemini-embedding-001",
+                                content=full_document,
+                                output_dimensionality=768
+                            )
+                            embedding_768d = result['embedding'] if isinstance(result, dict) else result
 
-                            # Save to ChromaDB with direct embedding
-                            collection.add(
+                            # Save to ChromaDB with explicit 768d embedding
+                            save_collection.add(
                                 ids=[concept_data['id']],
                                 documents=[full_document],
+                                embeddings=[embedding_768d],
                                 metadatas=[metadata]
                             )
+
+                            st.success(f"[COLLECTION] {save_collection_name}에 저장됨")
 
                             st.success(f"[SUCCESS] ChromaDB 저장 완료!")
                             st.success(f"[SUCCESS] 문서 ID: {concept_data['id']}")
@@ -481,43 +387,26 @@ def fitness_concept_input_form():
                             try:
                                 from firebase_service import firebase_service
 
-                                # Prepare Firebase data
                                 firebase_data = {
                                     'id': concept_data['id'],
-                                    'type': 'fitness_concept',
-                                    'category': concept_data['category'],
-                                    'concept_text': concept_data['concept_text'],
+                                    'original_text': concept_data['original_text'],
                                     'keywords': concept_data['keywords'],
-                                    'difficulty': concept_data['difficulty'],
-                                    'target_goal': concept_data['target_goal'],
-                                    'tags': concept_data['tags'],
                                     'related_concepts': concept_data['related_concepts'],
+                                    'concepts': concept_data['concepts'],
+                                    'tags': concept_data['tags'],
+                                    'category': concept_data['category'],
                                     'createdAt': concept_data['created_at'],
                                     'createdBy': concept_data['createdBy'],
                                     'hasImage': concept_data['hasImage'],
                                     'images': concept_data['images'],
+                                    'type': 'concept',
                                     'similarity_check': {
                                         'max_similarity': max_similarity,
                                         'is_duplicate': is_duplicate
                                     }
                                 }
 
-                                # Add category-specific fields
-                                if concept_category == "운동":
-                                    firebase_data['exercise_subcategory'] = concept_data.get('exercise_subcategory', '')
-                                    firebase_data['exercise_name'] = concept_data.get('exercise_name', '')
-                                    firebase_data['exercise_type'] = concept_data.get('exercise_type', '')
-                                    firebase_data['equipment'] = concept_data.get('equipment', [])
-                                    # 크로스핏 전용 필드
-                                    if exercise_subcategory == "크로스핏":
-                                        firebase_data['reps'] = concept_data.get('reps', '')
-                                elif concept_category == "영양":
-                                    firebase_data['nutrition_type'] = concept_data.get('nutrition_type', '')
-                                    firebase_data['meal_type'] = concept_data.get('meal_type', [])
-                                # 건강 카테고리는 별도 필드 없음
-
-                                # Save to fitness_concepts collection
-                                upload_result = firebase_service.add_fitness_concept(firebase_data)
+                                upload_result = firebase_service.add_concept(firebase_data)
 
                                 if upload_result.get('success'):
                                     st.success(f"[SUCCESS] Firebase 저장 완료!")
@@ -527,16 +416,14 @@ def fitness_concept_input_form():
 
                             except Exception as e:
                                 st.warning(f"[WARNING] Firebase 저장 실패: {e}")
-                                import traceback
-                                st.error(f"상세 오류: {traceback.format_exc()}")
 
                             # Final success message
                             st.balloons()
-                            st.success("[COMPLETE] 운동/영양 개념 저장이 완료되었습니다!")
+                            st.success("[COMPLETE] 개념 저장이 완료되었습니다!")
 
                             # Clear session state after successful save
-                            if 'fitness_compressed_images' in st.session_state:
-                                del st.session_state.fitness_compressed_images
+                            if 'compressed_images' in st.session_state:
+                                del st.session_state.compressed_images
 
                         except Exception as e:
                             st.error(f"[ERROR] 저장 실패: {e}")
@@ -547,4 +434,4 @@ def fitness_concept_input_form():
 
 
 if __name__ == "__main__":
-    fitness_concept_input_form()
+    concept_manual_input_form()
