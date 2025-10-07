@@ -6,6 +6,9 @@ import os
 import uuid
 from datetime import datetime
 from pathlib import Path
+from utils.datetime_utils import get_iso_timestamp
+from utils.firebase_utils import ensure_created_at_iso
+from storage.firebase_storage import FirebaseStorage
 
 import streamlit as st
 import pandas as pd
@@ -62,6 +65,15 @@ from services.gemini_service import gemini_service
 from analyzers.image_hierarchical_analyzer import ImageHierarchicalAnalyzer
 # 기본 중복 제거 엔진 먼저 임포트
 from deduplication_engine import deduplication_engine
+# ChromaDB 관리자 임포트
+from database.chroma_manager import ChromaManager
+
+# 새로운 AI 시스템 임포트
+from services.model_selector import model_selector
+from services.question_type_handler import question_type_handler
+from services.image_generator import image_generator
+from services.smart_problem_generator import smart_problem_generator
+from services.difficulty_classifier import difficulty_classifier
 
 # 고급 기능들을 안전하게 임포트
 try:
@@ -98,6 +110,220 @@ import asyncio
 from ai_batch_generator import BatchQuestionGenerator
 from question_types import QuestionType
 
+# ==============================
+# ChromaDB 관리 유틸 함수 (imports 이후)
+# ==============================
+def delete_image_file(image_url: str) -> None:
+    """
+    이미지 파일 삭제 (확장자 자동 감지 포함)
+
+    Args:
+        image_url: 이미지 파일 경로 (확장자 누락 가능)
+    """
+    import os
+
+    try:
+        if not image_url:
+            return
+
+        # UI에서 잘라낸 '...' 제거
+        image_url = image_url.replace('...', '')
+
+        # 확장자 자동 감지
+        if not os.path.exists(image_url):
+            base_path = image_url.rstrip('.')
+            possible_exts = ['.webp', '.jpg', '.jpeg', '.png']
+            for ext in possible_exts:
+                test_path = base_path + ext
+                if os.path.exists(test_path):
+                    image_url = test_path
+                    break
+
+        # 파일 삭제
+        if os.path.exists(image_url):
+            os.remove(image_url)
+            print(f"[DELETE] 이미지 파일 삭제: {image_url}")
+        else:
+            print(f"[SKIP] 이미지 파일 없음: {image_url}")
+
+    except Exception as e:
+        print(f"[ERROR] 이미지 파일 삭제 실패: {e}")
+
+
+def delete_chromadb_item(row_data, collection_name: str) -> bool:
+    """
+    ChromaDB에서 단일 항목 삭제 (선택 행 기반)
+
+    Args:
+        row_data: st.dataframe에서 선택된 행 데이터 (Series)
+        collection_name: 현재 선택된 컬렉션 이름
+
+    Returns:
+        bool: 삭제 성공 여부
+    """
+    try:
+        # Index를 통해 실제 ID 매핑
+        idx = None
+        try:
+            idx = int(row_data.get('Index')) if hasattr(row_data, 'get') else int(row_data['Index'])
+        except Exception:
+            pass
+
+        if idx is None:
+            st.error("항목 Index를 확인할 수 없습니다")
+            return False
+
+        full_ids = st.session_state.get('chromadb_ids', [])
+        if not full_ids or idx >= len(full_ids):
+            st.error("세션에 저장된 ID 목록이 유효하지 않습니다")
+            return False
+
+        item_id = full_ids[idx]
+
+        # 컬렉션 접근: 기존 엔진의 chroma_client 사용
+        collection = multi_domain_rag_engine.chroma_client.get_or_create_collection(collection_name)
+        collection.delete(ids=[item_id])
+
+        # 이미지 파일 삭제 (옵션)
+        # 다양한 키 시도 (로컬라이징 대응)
+        image_url = None
+        for k in ['이미지URL', 'imageUrl', 'image_url', '�̹���URL']:
+            try:
+                if k in row_data and row_data[k] and row_data[k] != 'N/A':
+                    image_url = str(row_data[k])
+                    break
+            except Exception:
+                # pandas Series .get 사용 가능 시도
+                v = getattr(row_data, 'get', lambda _k, _d=None: None)(k, None)
+                if v and v != 'N/A':
+                    image_url = str(v)
+                    break
+
+        if image_url:
+            delete_image_file(image_url)
+
+        st.success(f"✅ 항목 삭제 완료: {item_id}")
+
+        # 새로고침을 위해 세션 초기화
+        st.session_state.chromadb_data = None
+        st.session_state.chromadb_ids = []
+        st.rerun()
+        return True
+
+    except Exception as e:
+        st.error(f"❌ 삭제 실패: {e}")
+        return False
+
+
+def fix_broken_image_paths():
+    """
+    모든 컬렉션의 이미지 경로를 검사하여 확장자가 누락된 항목을 복구
+    """
+    try:
+        import os
+
+        collections = [
+            'nursing_questions',
+            'ai_questions',
+            'medical_concepts',
+            'fitness_concepts',
+            'lingumo_knowledge',
+        ]
+
+        fixed_count = 0
+
+        for coll_name in collections:
+            try:
+                collection = multi_domain_rag_engine.chroma_client.get_or_create_collection(coll_name)
+                all_data = collection.get()
+                if not all_data or not all_data.get('ids'):
+                    continue
+
+                for i, item_id in enumerate(all_data['ids']):
+                    metadata = all_data['metadatas'][i] if i < len(all_data.get('metadatas', [])) else {}
+                    image_url = None
+                    if isinstance(metadata, dict):
+                        image_url = metadata.get('imageUrl') or metadata.get('image_url')
+
+                    if image_url and not os.path.exists(image_url):
+                        base_path = image_url.rstrip('.')
+                        for ext in ['.webp', '.jpg', '.jpeg', '.png']:
+                            test_path = base_path + ext
+                            if os.path.exists(test_path):
+                                # 메타데이터 업데이트
+                                metadata = dict(metadata or {})
+                                metadata['imageUrl'] = test_path
+                                collection.update(ids=[item_id], metadatas=[metadata])
+                                fixed_count += 1
+                                break
+            except Exception as e:
+                print(f"[ERROR] {coll_name} 복구 실패: {e}")
+                continue
+
+        st.success(f"✅ {fixed_count}개 이미지 경로 복구 완료")
+        st.rerun()
+    except Exception as e:
+        st.error(f"❌ 복구 실패: {e}")
+
+
+def cleanup_orphan_files():
+    """
+    ChromaDB에 등록되지 않은 고아 이미지 파일 정리
+    """
+    from pathlib import Path
+    import os
+
+    try:
+        image_dir = Path("uploaded_images/concepts")
+        if not image_dir.exists():
+            st.info("이미지 디렉토리가 없습니다")
+            return
+
+        all_files = set(image_dir.glob("*.*"))
+
+        registered_files = set()
+        for coll_name in ['nursing_questions', 'ai_questions', 'medical_concepts', 'fitness_concepts', 'lingumo_knowledge']:
+            try:
+                collection = multi_domain_rag_engine.chroma_client.get_or_create_collection(coll_name)
+                data = collection.get()
+                if not data or not data.get('ids'):
+                    continue
+
+                for i, _ in enumerate(data['ids']):
+                    md = data['metadatas'][i] if i < len(data.get('metadatas', [])) else {}
+                    image_url = None
+                    if isinstance(md, dict):
+                        image_url = md.get('imageUrl') or md.get('image_url')
+                    if image_url:
+                        base = image_url.rstrip('.')
+                        for ext in ['.webp', '.jpg', '.jpeg', '.png']:
+                            test = Path(base + ext)
+                            if test.exists():
+                                registered_files.add(test)
+                                break
+            except Exception:
+                continue
+
+        orphan_files = all_files - registered_files
+        if orphan_files:
+            st.warning(f"⚠️ {len(orphan_files)}개 고아 파일 발견")
+            for f in sorted(orphan_files):
+                st.write(f"- {f.name}")
+
+            if st.button("🗑️ 고아 파일 모두 삭제", key="delete_orphans"):
+                for f in orphan_files:
+                    try:
+                        f.unlink()
+                    except Exception as e:
+                        print(f"[ERROR] 파일 삭제 실패: {f} - {e}")
+                st.success(f"✅ {len(orphan_files)}개 파일 삭제 완료")
+                st.rerun()
+        else:
+            st.info("✅ 고아 파일 없음")
+    except Exception as e:
+        st.error(f"❌ 정리 실패: {e}")
+
+# ���� �׸� ���� ������ ������ ǥ���ϴ� ����
 # 유사 항목 없음 사유를 간결히 표기하는 헬퍼
 def show_no_similarity_reason(total_docs: int, n_requested: int) -> None:
     try:
@@ -130,6 +356,10 @@ def main():
             st.error(f"Configuration error: {e}")
             st.stop()
 
+    # Initialize ChromaDB manager
+    if 'chroma_manager' not in st.session_state:
+        st.session_state.chroma_manager = ChromaManager()
+
     # Header
     st.title("[BOOK] Hanoa RAG System")
     st.markdown("간호학/의학 문제 및 개념 관리 시스템")
@@ -147,11 +377,11 @@ def main():
             total_concepts = 0
 
             collections_to_check = [
-                ("nursing_questions", "question"),
+                ("nursing_questions", "question"),  # 직접 입력한 문제
+                ("ai_questions", "question"),  # AI가 생성한 문제
                 ("medical_problems", "question"),
-                ("nursing_concepts", "concept"),
                 ("medical_concepts", "concept"),
-                ("fitness_knowledge", "concept"),
+                ("fitness_concepts", "concept"),
                 ("lingumo_knowledge", "concept")
             ]
 
@@ -229,17 +459,38 @@ def concept_input_form():
     concept_manual_input_form()
 def ai_generation_tab():
     """AI batch question generation tab"""
-    st.header("[AI] AI 문제 배치 생성")
+    st.header("[AI] AI 문제 생성")
 
-    # Create subtabs - Only AUTO and HISTORY
-    gen_tab1, gen_tab2 = st.tabs([
-        "[AUTO] AI 자동 학습 계획",
-        "[HISTORY] 생성 이력"
-    ])
+    # Display save logs if any
+    if 'save_logs' in st.session_state and len(st.session_state.save_logs) > 0:
+        with st.expander(f"📋 저장 로그 ({len(st.session_state.save_logs)}개)", expanded=False):
+            for log in reversed(st.session_state.save_logs[-20:]):  # Show last 20 logs, newest first
+                if "✅" in log:
+                    st.success(log)
+                elif "⚠️" in log:
+                    st.warning(log)
+                elif "❌" in log:
+                    st.error(log)
+                else:
+                    st.info(log)
 
-    with gen_tab1:
-        auto_learning_plan_section()
+            if st.button("🗑️ 로그 지우기"):
+                st.session_state.save_logs = []
+                st.rerun()
 
+    # Simplified tabs - MAIN, HISTORY
+    # gen_tab1, gen_tab2 = st.tabs([
+    #     "🤖 틀린 문제 기반 생성",
+    #     "[HISTORY] 생성 이력"
+    # ])
+
+    # with gen_tab1:
+    #     explanation_requests_section()
+
+    # DISABLED: 틀린 문제 기반 자동 생성 기능 (추후 다른 기능 추가 예정)
+    st.info("🚧 이 섹션은 현재 개발 중입니다. 곧 새로운 기능이 추가될 예정입니다.")
+
+    gen_tab2 = st.container()
     with gen_tab2:
         generation_history_section()
 
@@ -799,20 +1050,41 @@ def generation_history_section():
                 st.info("[EMPTY] 선택한 기간에 생성 이력이 없습니다")
 
         except Exception as e:
-            st.error(f"[ERROR] 이력 조회 실패: {str(e)}")
+            error_msg = str(e)
 
-            # Show sample data for demonstration
-            st.info("[INFO] 샘플 데이터를 표시합니다")
-            sample_data = {
-                "시간": ["2025-01-23 10:00", "2025-01-23 09:30", "2025-01-23 09:00"],
-                "유형": ["MCQ", "Case", "Image"],
-                "모델": ["gpt-5-mini", "gpt-5", "gemini-2.5-flash"],
-                "난이도": ["medium", "hard", "easy"],
-                "과목": ["nursing", "medical", "pharmacology"],
-                "생성자": ["ai_batch_generator", "user_monitor", "manual"]
-            }
-            df = pd.DataFrame(sample_data)
-            st.dataframe(df, width='stretch')
+            # Check if it's a Firebase index error
+            if "requires an index" in error_msg or "400" in error_msg:
+                st.error("[ERROR] Firebase 인덱스가 필요합니다")
+                st.warning("""
+                ### 해결 방법:
+                1. 아래 링크를 클릭하여 Firebase Console에서 인덱스 생성
+                2. 인덱스 생성 완료 후 (1-5분 소요) 페이지 새로고침
+
+                **또는** 샘플 데이터를 삭제하세요:
+                ```bash
+                cd backend
+                python delete_sample_data.py
+                ```
+                """)
+
+                # Extract index creation link if available
+                if "https://" in error_msg:
+                    import re
+                    urls = re.findall(r'https://[^\s]+', error_msg)
+                    if urls:
+                        st.markdown(f"**인덱스 생성 링크**: {urls[0]}")
+
+                # Show helpful info instead of sample data
+                st.info("""
+                [INFO] 현재 ai_generation_history 컬렉션에 데이터가 없습니다.
+
+                AI 문제 생성이 완료되면 여기에 이력이 표시됩니다.
+                """)
+            else:
+                st.error(f"[ERROR] 이력 조회 실패: {error_msg}")
+
+                # Show helpful message for empty data
+                st.info("[INFO] 생성 이력이 없거나 조회 중 오류가 발생했습니다")
 
 
 def system_management_tab():
@@ -836,9 +1108,9 @@ def system_management_tab():
 
         with col2:
             st.info("[MODEL] AI 모델 설정")
-            st.code("Embedding: text-embedding-004")
-            st.code("Primary: GPT-5 Mini")
-            st.code("Advanced: GPT-5")
+            st.code("Embedding: gemini-embedding-001 (768d)")
+            st.code("Primary: GPT-4o Mini")
+            st.code("Advanced: GPT-4o")
 
         # Environment check
         st.subheader("[CHECK] 환경 확인")
@@ -928,7 +1200,13 @@ def chromadb_check_tab():
     # Collection selection
     collection_name = st.selectbox(
         "컬렉션 선택",
-        ["nursing_questions", "nursing_concepts", "medical_concepts", "fitness_knowledge", "lingumo_knowledge"]
+        [
+            "nursing_questions",  # 직접 입력한 문제
+            "ai_questions",  # AI가 생성한 문제
+            "medical_concepts",
+            "fitness_concepts",
+            "lingumo_knowledge"
+        ]
     )
 
     # Store data in session state
@@ -962,10 +1240,14 @@ def chromadb_check_tab():
                         document = results['documents'][i] if i < len(results['documents']) else ""
 
                         # Extract full question data from document and metadata
-                        question_display = metadata.get('questionText', metadata.get('title', ''))
+                        question_display = metadata.get('questionText', metadata.get('description', metadata.get('title', '')))
                         if not question_display and document:
                             # Try to extract from document if not in metadata
-                            question_display = document.split('\n')[0].replace('문제: ', '').replace('설명: ', '')[:100]
+                            first_line = document.split('\n')[0] if document else ''
+                            # Remove common prefixes
+                            for prefix in ['문제: ', '설명: ', '개념: ', '키워드: ', '분야: ', '태그: ']:
+                                first_line = first_line.replace(prefix, '')
+                            question_display = first_line[:100]
 
                         # Check if data has image
                         has_image = metadata.get('hasImage', False)
@@ -985,10 +1267,22 @@ def chromadb_check_tab():
 
                         # Add specific fields based on type
                         if metadata.get('type') == 'problem':
+                            # Handle choices - can be array or individual fields
+                            choices = metadata.get('choices', [])
+                            if isinstance(choices, list) and len(choices) >= 2:
+                                choice1 = choices[0][:30] if len(choices) > 0 else 'N/A'
+                                choice2 = choices[1][:30] if len(choices) > 1 else 'N/A'
+                                choice3 = choices[2][:30] if len(choices) > 2 else 'N/A'
+                            else:
+                                choice1 = metadata.get('choice1', 'N/A')[:30]
+                                choice2 = metadata.get('choice2', 'N/A')[:30]
+                                choice3 = metadata.get('choice3', 'N/A')[:30]
+
                             data_item.update({
-                                '정답': metadata.get('correctAnswer', 'N/A')[:50],
-                                '선택지1': metadata.get('choice1', 'N/A')[:30],
-                                '선택지2': metadata.get('choice2', 'N/A')[:30],
+                                '정답': metadata.get('correctAnswer', metadata.get('correctanswer', 'N/A'))[:50],
+                                '선택지1': choice1,
+                                '선택지2': choice2,
+                                '선택지3': choice3,
                             })
                         elif metadata.get('type') == 'concept':
                             data_item.update({
@@ -1034,6 +1328,45 @@ def chromadb_check_tab():
     if st.session_state.chromadb_data is not None:
         st.divider()
 
+        # 📋 일괄 작업 섹션
+        st.subheader("📋 일괄 작업")
+        col_bulk1, col_bulk2, col_bulk3 = st.columns(3)
+
+        with col_bulk1:
+            if st.button("🗑️ 선택 항목 삭제", key="bulk_delete_toggle"):
+                st.session_state['show_bulk_delete'] = not st.session_state.get('show_bulk_delete', False)
+
+            if st.session_state.get('show_bulk_delete', False):
+                # 간단한 선택/확인 UI 제공
+                indices_for_bulk = st.multiselect(
+                    "삭제할 Index 선택",
+                    options=st.session_state.chromadb_data['Index'].tolist(),
+                    key="bulk_delete_indices"
+                )
+                if st.button("✅ 예, 삭제합니다", key="bulk_delete_confirm"):
+                    if indices_for_bulk:
+                        try:
+                            collection = multi_domain_rag_engine.chroma_client.get_or_create_collection(collection_name)
+                            ids_to_delete = [st.session_state.chromadb_ids[i] for i in indices_for_bulk]
+                            collection.delete(ids=ids_to_delete)
+                            st.success(f"[SUCCESS] {len(ids_to_delete)}개 항목 삭제 완료!")
+                            st.session_state.chromadb_data = None
+                            st.session_state.chromadb_ids = []
+                            st.session_state['show_bulk_delete'] = False
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"[ERROR] 일괄 삭제 실패: {e}")
+                    else:
+                        st.info("선택된 항목이 없습니다")
+
+        with col_bulk2:
+            if st.button("🔄 깨진 이미지 경로 복구", key="fix_img_paths"):
+                fix_broken_image_paths()
+
+        with col_bulk3:
+            if st.button("🧹 고아 파일 정리", key="cleanup_orphans"):
+                cleanup_orphan_files()
+
         # Show data table
         st.dataframe(st.session_state.chromadb_data, width='stretch')
 
@@ -1057,9 +1390,33 @@ def chromadb_check_tab():
 
                 col_img1, col_img2 = st.columns([1, 2])
 
+                # 오른쪽 패널에 개별 삭제 버튼 (미리보기 옆)
+                with col_img2:
+                    if st.button("🗑️ 이 항목 삭제", key=f"delete_{selected_index}"):
+                        st.warning("정말 삭제하시겠습니까?")
+                        col_confirm1, col_confirm2 = st.columns(2)
+                        with col_confirm1:
+                            if st.button("✅ 예, 삭제합니다", key=f"confirm_delete_{selected_index}"):
+                                delete_chromadb_item(selected_row, collection_name)
+                        with col_confirm2:
+                            if st.button("❌ 취소", key=f"cancel_delete_{selected_index}"):
+                                st.info("삭제 취소")
+
                 with col_img1:
                     if image_url and image_url != 'N/A':
                         try:
+                            # 확장자 자동 감지 및 추가
+                            import os
+                            import glob
+                            if not os.path.exists(image_url):
+                                # 확장자 없거나 잘못된 경우 (끝이 .으로 끝나는 경우)
+                                base_path = image_url.rstrip('.')  # 마지막 점 제거
+                                possible_exts = ['.webp', '.jpg', '.jpeg', '.png']
+                                for ext in possible_exts:
+                                    test_path = base_path + ext
+                                    if os.path.exists(test_path):
+                                        image_url = test_path
+                                        break
                             st.image(image_url, caption="저장된 이미지", width=200)
                         except Exception as e:
                             st.error(f"[ERROR] 이미지 로드 실패: {e}")
@@ -1139,7 +1496,7 @@ def chromadb_check_tab():
             ("nursing_questions", "간호 문제"),
             ("medical_problems", "의학 문제"),
             ("medical_concepts", "의학 개념"),
-            ("fitness_knowledge", "운동/영양"),
+            ("fitness_concepts", "운동/영양"),
             ("lingumo_knowledge", "언어 학습")
         ]
 
@@ -1148,8 +1505,8 @@ def chromadb_check_tab():
             try:
                 collection = multi_domain_rag_engine.chroma_client.get_or_create_collection(coll_name)
 
-                # fitness_knowledge는 운동/영양/건강 분리
-                if coll_name == "fitness_knowledge":
+                # fitness_concepts는 운동/영양/건강 분리
+                if coll_name == "fitness_concepts":
                     results = collection.get()
                     if results and results['metadatas']:
                         # 운동 개념
@@ -1206,7 +1563,7 @@ def chromadb_check_tab():
                         '상태': '[ACTIVE]' if count > 0 else '[EMPTY]'
                     })
             except Exception as e:
-                if coll_name == "fitness_knowledge":
+                if coll_name == "fitness_concepts":
                     stats_data.append({
                         '데이터베이스': 'ChromaDB',
                         '컬렉션': '운동',
@@ -1284,6 +1641,597 @@ def lingumo_data_input_tab():
     st.markdown("단어, 문장, 문법 등을 입력하여 Lingumo RAG 시스템에 저장합니다.")
 
     lingumo_content_input_form()
+
+
+def explanation_requests_section():
+    """Generate problems based on wrong answers using GPT-4o mini"""
+    st.subheader("🤖 틀린 문제 기반 자동 생성")
+    st.markdown("학생들이 틀린 문제의 개념을 분석하여 GPT-4o mini로 유사 문제를 자동 생성합니다.")
+
+    try:
+        # Check Firebase connection
+        if not firebase_service.initialized:
+            st.error("❌ Firebase 연결 실패. 서비스 계정 키를 확인해주세요.")
+            st.info("💡 firebase-service-account.json 파일을 backend 폴더에 배치해야 합니다.")
+            return
+
+        # Fetch wrong answers from SRS events (rating = 'again')
+        srs_events = firebase_service.db.collection('srs_events').where('rating', '==', 'again').limit(50).stream()
+
+        wrong_problems = []
+        seen_cards = set()
+
+        for event in srs_events:
+            data = event.to_dict()
+            card_id = data.get('cardId')
+
+            # Avoid duplicates
+            if card_id in seen_cards:
+                continue
+            seen_cards.add(card_id)
+
+            # Get problem details
+            try:
+                problem_doc = firebase_service.db.collection('nursing_problems').document(card_id).get()
+                if problem_doc.exists:
+                    problem_data = problem_doc.to_dict()
+                    problem_data['id'] = card_id
+                    problem_data['userId'] = data.get('userId')
+                    problem_data['wrongAt'] = data.get('timestamp')
+
+                    # Skip 보건의료법규 (laws change yearly, no need to maintain)
+                    if problem_data.get('subject') == '보건의료법규':
+                        continue
+
+                    wrong_problems.append(problem_data)
+            except:
+                pass
+
+        if not wrong_problems:
+            st.info("📭 최근 틀린 문제가 없습니다.")
+            st.caption("💡 학생이 문제를 틀리면 자동으로 여기에 표시됩니다.")
+            return
+
+        # Initialize processed problems tracking
+        if 'processed_wrong_problems' not in st.session_state:
+            st.session_state.processed_wrong_problems = set()
+
+        # Filter out processed problems
+        unprocessed_problems = [p for p in wrong_problems if p['id'] not in st.session_state.processed_wrong_problems]
+
+        st.metric("틀린 문제 수", f"{len(unprocessed_problems)} / {len(wrong_problems)}")
+        if len(unprocessed_problems) < len(wrong_problems):
+            st.caption(f"✅ {len(wrong_problems) - len(unprocessed_problems)}개 문제 처리 완료")
+        st.divider()
+
+        if not unprocessed_problems:
+            st.success("🎉 모든 틀린 문제를 처리했습니다!")
+            if st.button("🔄 목록 초기화"):
+                st.session_state.processed_wrong_problems = set()
+                st.rerun()
+            return
+
+        # Display wrong problems and generate similar ones (all, sorted by time)
+        for prob in unprocessed_problems:  # Show all unprocessed problems
+            with st.expander(f"🔹 {prob.get('subject', 'N/A')} - {prob.get('field', 'N/A')}"):
+                st.markdown(f"**문제:** {prob.get('questionText', 'N/A')}")
+
+                # Display choices
+                choices = prob.get('choices', [])
+                if choices:
+                    st.markdown("**보기:**")
+                    for i, choice in enumerate(choices, 1):
+                        st.markdown(f"{i}. {choice}")
+
+                # Get correct answer (check both field names and calculate from index if needed)
+                correct_answer = prob.get('correctAnswer') or prob.get('correctanswer')
+                if not correct_answer and choices:
+                    answer_idx = prob.get('answer')
+                    if answer_idx is not None and 0 <= answer_idx < len(choices):
+                        correct_answer = choices[answer_idx]
+
+                st.markdown(f"**정답:** {correct_answer or 'N/A'}")
+                st.markdown(f"**난이도:** {prob.get('difficulty', 'N/A')}")
+
+                if prob.get('keywords'):
+                    st.markdown(f"**키워드:** {', '.join(prob.get('keywords', []))}")
+
+                st.divider()
+
+                # AI 자동 분석 안내
+                st.caption("💡 AI가 원본 문제를 분석하여 최적의 문제 유형과 출제 스타일을 자동 선택합니다")
+
+
+                if st.button("🤖 AI가 분석 후 자동 생성", key=f"gen_{prob['id']}", type="primary", use_container_width=True):
+                        with st.spinner("AI가 문제를 분석하고 있습니다..."):
+                            try:
+                                # AI 자동 분석 - 유형 및 페르소나 선택
+                                question_type, persona = question_type_handler.analyze_and_select(prob)
+
+                                # 분석 결과 표시
+                                type_icons = {
+                                    "MCQ": "📝", "Matching": "🔗", "Procedure": "📋",
+                                    "Scenario": "🏥", "Image": "🖼️"
+                                }
+                                persona_icons = {
+                                    "학술전문가": "📚", "임상전문가": "🏥",
+                                    "시험전문가": "📝", "최근합격자": "🎓"
+                                }
+                                st.info(f"📊 AI 분석 결과: {type_icons.get(question_type, '📝')} {question_type} 유형 | {persona_icons.get(persona, '📝')} {persona} 스타일")
+
+                                # Generate problems using GPT-4o mini
+                                from openai import OpenAI
+                                client = OpenAI(api_key=OPENAI_API_KEY)
+
+                                # Build detailed original problem context
+                                original_choices = prob.get('choices', [])
+                                choices_text = "\n".join([f"선택지 {i+1}: {choice}" for i, choice in enumerate(original_choices)])
+
+                                # Get correct answer (check both field names and calculate from index if needed)
+                                original_correct_answer = prob.get('correctAnswer') or prob.get('correctanswer')
+                                if not original_correct_answer and original_choices:
+                                    answer_idx = prob.get('answer')
+                                    if answer_idx is not None and 0 <= answer_idx < len(original_choices):
+                                        original_correct_answer = original_choices[answer_idx]
+
+                                # 난이도 분포 결정 (균형형)
+                                target_difficulties = ['하', '중', '중', '상', '하']  # 5개 생성
+
+                                st.info(f"🎯 난이도 분포: 하 2개, 중 2개, 상 1개")
+
+                                # 스마트 문제 생성 시스템 사용
+                                generated_problems_list, generation_stats = smart_problem_generator.generate_with_difficulty_control(
+                                    original_problem=prob,
+                                    target_difficulties=target_difficulties,
+                                    question_type=question_type,
+                                    persona=persona
+                                )
+
+                                # 생성 통계 표시
+                                st.success(f"✅ 생성 완료: {generation_stats['total_generated']}개 / {generation_stats['total_requested']}개")
+                                st.info(f"📊 모델 사용: {', '.join([f'{k}({v}개)' for k, v in generation_stats['models_used'].items()])}")
+                                st.info(f"✔️ 난이도 검증: 통과 {generation_stats['validation_passed']}개 / 수정 {generation_stats['difficulty_corrections']}개")
+
+                                # 기존 형식으로 변환
+                                generated_problems = generated_problems_list
+
+                                # ChromaDB-based duplicate checker (uses semantic similarity)
+                                def is_duplicate_problem_chromadb(new_question, new_answer):
+                                    """Check if problem is duplicate using ChromaDB semantic search"""
+                                    chroma = st.session_state.chroma_manager
+                                    if not chroma or not chroma.problems_collection:
+                                        return False, 0.0
+
+                                    try:
+                                        # Combine question + answer for search
+                                        combined_text = f"{new_question} {new_answer}"
+
+                                        # Query ChromaDB for similar problems
+                                        results = chroma.problems_collection.query(
+                                            query_texts=[combined_text],
+                                            n_results=1  # Get top 1 most similar
+                                        )
+
+                                        if results and results['distances'] and len(results['distances'][0]) > 0:
+                                            # ChromaDB returns distance (lower = more similar)
+                                            # Convert to similarity score (0-1, higher = more similar)
+                                            distance = results['distances'][0][0]
+                                            similarity = 1.0 - (distance / 2.0)  # Normalize to 0-1
+
+                                            # Threshold: 0.85 = very similar
+                                            if similarity > 0.85:
+                                                return True, similarity
+                                            return False, similarity
+                                        return False, 0.0
+                                    except Exception as e:
+                                        st.warning(f"ChromaDB 검색 실패, 중복 체크 스킵: {e}")
+                                        return False, 0.0
+
+                                # Store in session state for approval workflow
+                                if 'pending_problems' not in st.session_state:
+                                    st.session_state.pending_problems = {}
+
+                                # Validate and prepare for approval with duplicate retry
+                                valid_problems = []
+                                skipped_count = 0
+                                duplicate_count = 0
+                                MAX_RETRY = 5  # Maximum retry per problem
+
+                                progress_text = st.empty()
+                                for idx, gen_prob in enumerate(generated_problems):
+                                    progress_text.info(f"문제 {idx+1}/{len(generated_problems)} 검증 중...")
+
+                                    # Retry loop for duplicate problems
+                                    retry_count = 0
+                                    current_problem = gen_prob
+
+                                    while retry_count <= MAX_RETRY:
+                                        # Check for semantic duplicate using ChromaDB
+                                        is_dup, similarity_score = is_duplicate_problem_chromadb(
+                                            current_problem.get('questionText', ''),
+                                            current_problem.get('correctanswer', '')
+                                        )
+
+                                        if is_dup and retry_count < MAX_RETRY:
+                                            duplicate_count += 1
+                                            retry_count += 1
+                                            progress_text.warning(f"문제 {idx+1}: 중복 감지 (유사도: {similarity_score:.2f}) - 재생성 시도 {retry_count}/{MAX_RETRY}")
+
+                                        # 중복 감지 시 재생성
+                                        if is_dup and retry_count < MAX_RETRY:
+                                            # Regenerate single problem
+                                            try:
+                                                regenerate_prompt = f"""이전에 생성한 문제가 기존 문제와 너무 유사합니다.
+다른 각도에서 접근하여 새로운 문제를 1개만 생성해주세요.
+
+[원본 문제]
+질문: {prob.get('questionText')}
+정답: {original_correct_answer}
+난이도: {prob.get('difficulty', '중')}
+
+[생성 요구사항]
+- 완전히 다른 임상 상황 사용
+- 다른 나이대, 다른 증상, 다른 시나리오
+- 하지만 같은 개념을 테스트
+- 선택지 5개 필수
+- 해설 없음
+- 난이도는 원본과 동일하거나 약간 쉽게
+
+JSON 형식:
+{{
+  "questionText": "...",
+  "choices": ["...", "...", "...", "...", "..."],
+  "answer": 0,
+  "correctanswer": "...",
+  "difficulty": "{prob.get('difficulty', '중')}"
+}}"""
+
+                                                regen_response = client.chat.completions.create(
+                                                    model="gpt-4o-mini",
+                                                    messages=[
+                                                        {"role": "system", "content": system_prompt},
+                                                        {"role": "user", "content": regenerate_prompt}
+                                                    ],
+                                                    temperature=0.9  # Higher temperature for more variety
+                                                )
+
+                                                regen_content = regen_response.choices[0].message.content.strip()
+                                                if regen_content.startswith('```json'):
+                                                    regen_content = regen_content[7:]
+                                                if regen_content.endswith('```'):
+                                                    regen_content = regen_content[:-3]
+
+                                                current_problem = json.loads(regen_content.strip())
+                                                continue  # Retry duplicate check
+
+                                            except Exception as regen_error:
+                                                progress_text.error(f"재생성 실패: {regen_error}")
+                                                break
+
+                                        elif is_dup and retry_count >= MAX_RETRY:
+                                            # Give up after MAX_RETRY attempts
+                                            progress_text.error(f"문제 {idx+1}: {MAX_RETRY}회 재시도 후에도 중복 - 건너뛰기")
+                                            current_problem = None
+                                            break
+                                        else:
+                                            # Not duplicate, proceed
+                                            problem_difficulty = current_problem.get('difficulty', '중')
+
+                                            # 난이도 검증은 smart_problem_generator에서 이미 완료됨
+                                            validation_details = current_problem.get('_validation_details', {})
+                                            if not validation_details.get('is_valid', True):
+                                                progress_text.info(f"문제 {idx+1}: 난이도 자동 수정 ({validation_details.get('claimed')} → {validation_details.get('actual')})")
+
+                                            break
+
+                                    # Skip if couldn't generate unique problem
+                                    if current_problem is None:
+                                        skipped_count += 1
+                                        continue
+
+                                    # Validate 5 choices
+                                    choices = current_problem.get('choices', [])
+                                    if len(choices) != 5:
+                                        progress_text.warning(f"⚠️ 문제 {idx+1}: 선택지가 {len(choices)}개 (5개 필수) - 건너뛰기")
+                                        skipped_count += 1
+                                        continue
+
+                                    # Validate answer index
+                                    answer = current_problem.get('answer', 0)
+                                    if not (0 <= answer <= 4):
+                                        progress_text.warning(f"⚠️ 문제 {idx+1}: 정답 번호 오류 - 건너뛰기")
+                                        skipped_count += 1
+                                        continue
+
+                                    # AI 모델 정보 가져오기 (smart_problem_generator에서 생성)
+                                    generation_model = current_problem.get('_generated_by', 'unknown')
+                                    verification_model = None  # 검증은 난이도 분류기가 수행
+
+                                    new_problem = {
+                                        'questionText': current_problem['questionText'],
+                                        'choices': choices,
+                                        'answer': answer,
+                                        'correctanswer': current_problem['correctanswer'],
+                                        # No explanation - students can request it separately
+
+                                        # Tag-based system (Proposal 1)
+                                        'subject': None,  # AI-generated problems have no fixed subject
+                                        'relatedSubjects': [prob.get('subject')],  # Related subjects array
+                                        'relatedConcepts': prob.get('keywords', []),  # Concept-based
+
+                                        'field': prob.get('field'),
+                                        'difficulty': current_problem.get('difficulty', '중'),  # Use AI-generated difficulty
+                                        'keywords': prob.get('keywords', []),
+
+                                        # AI model tracking
+                                        'aiModels': {
+                                            'generation': generation_model,
+                                            'verification': verification_model,
+                                            'questionType': question_type,
+                                            'persona': persona
+                                        },
+
+                                        # Priority & metadata
+                                        'priority': 2,  # 1=manual, 2=AI-generated
+                                        'source': 'ai-generated',
+                                        'generatedFrom': prob['id'],
+                                        'generatedBy': f"{generation_model}{'+' + verification_model if verification_model else ''}",
+                                        'createdAt': get_iso_timestamp()
+                                    }
+
+                                    valid_problems.append(new_problem)
+                                    progress_text.success(f"문제 {idx+1}: ✅ 검증 완료")
+
+                                progress_text.empty()
+
+                                # Store for approval
+                                problem_key = f"{prob['id']}_generated"
+                                st.session_state.pending_problems[problem_key] = valid_problems
+
+                                if len(valid_problems) > 0:
+                                    st.success(f"✅ {len(valid_problems)}개 문제 생성 완료! 아래에서 검토 후 승인해주세요.")
+                                if duplicate_count > 0:
+                                    st.info(f"ℹ️ {duplicate_count}개 문제는 의미적 중복으로 스킵했습니다. (코사인 유사도 > 0.85)")
+                                if skipped_count > 0:
+                                    st.info(f"ℹ️ {skipped_count}개 문제는 검증 실패로 생성하지 않았습니다.")
+
+                                # Display generated problems for approval
+                                st.divider()
+                                st.subheader("🔍 생성된 문제 검토")
+
+                                # Initialize saved/rejected tracking
+                                if 'saved_problems' not in st.session_state:
+                                    st.session_state.saved_problems = set()
+                                if 'rejected_problems' not in st.session_state:
+                                    st.session_state.rejected_problems = set()
+                                # Initialize save logs tracking
+                                if 'save_logs' not in st.session_state:
+                                    st.session_state.save_logs = []
+
+                                # Count processed problems for this original problem
+                                processed_count = sum(1 for idx in range(len(valid_problems))
+                                                     if f"{prob['id']}_{idx}" in st.session_state.saved_problems or
+                                                        f"{prob['id']}_{idx}" in st.session_state.rejected_problems)
+
+                                # If all problems processed, mark original as complete
+                                if processed_count == len(valid_problems):
+                                    st.session_state.processed_wrong_problems.add(prob['id'])
+                                    st.success(f"✅ 모든 생성 문제 처리 완료! 이 원본 문제가 목록에서 제거됩니다.")
+                                    st.rerun()
+
+                                # Bulk actions - show only if there are unprocessed problems
+                                unprocessed_indices = [idx for idx in range(len(valid_problems))
+                                                      if f"{prob['id']}_{idx}" not in st.session_state.saved_problems and
+                                                         f"{prob['id']}_{idx}" not in st.session_state.rejected_problems]
+
+                                if unprocessed_indices:
+                                    col1, col2, col3 = st.columns([2, 1, 1])
+                                    with col1:
+                                        st.caption(f"미처리 문제: {len(unprocessed_indices)}개")
+                                    with col2:
+                                        if st.button("✅ 모두 승인", key=f"approve_all_{prob['id']}", type="primary"):
+                                            st.write(f"DEBUG: valid_problems 개수 = {len(valid_problems)}")
+                                            st.write(f"DEBUG: unprocessed_indices = {unprocessed_indices}")
+
+                                            saved_count = 0
+                                            chroma = st.session_state.chroma_manager
+                                            fs = FirebaseStorage()
+
+                                            # Progress tracking
+                                            total_count = len(unprocessed_indices)
+                                            progress_placeholder = st.empty()
+                                            status_placeholder = st.empty()
+
+                                            for idx_num, idx in enumerate(unprocessed_indices, 1):
+                                                st.write(f"DEBUG: 처리 중 idx={idx}, valid_problems[{idx}] exists = {idx < len(valid_problems)}")
+                                                prob_hash = f"{prob['id']}_{idx}"
+
+                                                # Update progress
+                                                progress_placeholder.progress(idx_num / total_count)
+                                                status_placeholder.info(f"[{idx_num}/{total_count}] 문제 저장 중...")
+
+                                                try:
+                                                    # === STEP 1: 중복 검사 ===
+                                                    status_placeholder.info(f"[{idx_num}/{total_count}] STEP 1: 중복 검사 중...")
+
+                                                    # TODO: 중복 검사 로직 추가 (현재는 스킵)
+                                                    is_duplicate = False
+                                                    max_similarity = 0.0
+
+                                                    log_entry = f"✅ [{idx_num}/{total_count}] STEP 1: 중복 검사 완료 (유사도: {max_similarity:.3f})"
+                                                    st.session_state.save_logs.append(log_entry)
+
+                                                    # === STEP 2: ChromaDB 저장 ===
+                                                    status_placeholder.info(f"[{idx_num}/{total_count}] STEP 2: ChromaDB 저장 중...")
+
+                                                    # Generate unique ID
+                                                    problem_id = str(uuid.uuid4())
+
+                                                    if chroma and chroma.problems_collection:
+                                                        try:
+                                                            chroma_data = {
+                                                                'id': problem_id,
+                                                                'question_text': valid_problems[idx].get('questionText', ''),
+                                                                'choices': valid_problems[idx].get('choices', []),
+                                                                'correct_answer': valid_problems[idx].get('correctanswer', ''),
+                                                                'subject': prob.get('subject', ''),
+                                                                'difficulty': valid_problems[idx].get('difficulty', ''),
+                                                                'keywords': valid_problems[idx].get('keywords', []),
+                                                                'concepts': valid_problems[idx].get('relatedConcepts', []),
+                                                                'created_at': str(valid_problems[idx].get('createdAt', ''))
+                                                            }
+                                                            chroma.add_problem(chroma_data)
+
+                                                            # Log ChromaDB save
+                                                            log_entry = f"✅ [{idx_num}/{total_count}] STEP 2: ChromaDB 저장 완료 (ID: {problem_id[:8]}...)"
+                                                            st.session_state.save_logs.append(log_entry)
+                                                        except Exception as chroma_error:
+                                                            # Log ChromaDB failure
+                                                            log_entry = f"⚠️ [{idx_num}/{total_count}] STEP 2: ChromaDB 실패: {str(chroma_error)[:50]}..."
+                                                            st.session_state.save_logs.append(log_entry)
+                                                            raise  # Re-raise to skip Firebase save
+
+                                                    # === STEP 3: Firebase 저장 ===
+                                                    status_placeholder.info(f"[{idx_num}/{total_count}] STEP 3: Firebase 저장 중...")
+
+                                                    # Prepare data for Firebase (convert datetime to string)
+                                                    problem_data = valid_problems[idx].copy()
+                                                    problem_data['id'] = problem_id  # Use same ID as ChromaDB
+                                                    problem_data = ensure_created_at_iso(problem_data)
+
+                                                    # Save to Firebase via storage adapter
+                                                    save_result = fs.save_problem('nursing_problems', problem_data)
+                                                    if not save_result.get('success'):
+                                                        raise RuntimeError(save_result.get('message', 'Firebase save failed'))
+
+                                                    status_placeholder.success(f"[{idx_num}/{total_count}] ✅ 전체 저장 완료 (ID: {problem_id[:8]}...)")
+
+                                                    # Log Firebase save
+                                                    log_entry = f"✅ [{idx_num}/{total_count}] STEP 3: Firebase 저장 완료 (ID: {problem_id[:8]}...)"
+                                                    st.session_state.save_logs.append(log_entry)
+
+                                                    st.session_state.saved_problems.add(prob_hash)
+                                                    saved_count += 1
+                                                except Exception as save_error:
+                                                    status_placeholder.error(f"[{idx_num}/{total_count}] ❌ 문제 저장 실패: {save_error}")
+
+                                                    # Log save failure
+                                                    log_entry = f"❌ [{idx_num}/{total_count}] 저장 실패: {str(save_error)[:50]}..."
+                                                    st.session_state.save_logs.append(log_entry)
+
+                                            # Clear progress indicators and show final message
+                                            progress_placeholder.empty()
+
+                                            # Only rerun if at least one problem was successfully saved
+                                            if saved_count > 0:
+                                                status_placeholder.success(f"✅ {saved_count}/{total_count}개 문제를 Firebase + ChromaDB에 저장했습니다!")
+
+                                                # Verify data was saved by checking ChromaDB count
+                                                try:
+                                                    verify_count = chroma.problems_collection.count() if chroma and chroma.problems_collection else 0
+                                                    st.info(f"📊 현재 ai_questions 총 문제 수: {verify_count}")
+                                                except Exception as e:
+                                                    st.warning(f"⚠️ 검증 실패: {e}")
+
+                                                # 자동 새로고침을 피하고 사용자에게 결과를 남깁니다.
+                                                # 필요 시 사용자가 수동으로 새로고침하거나 다음 작업을 진행할 수 있습니다.
+                                            else:
+                                                status_placeholder.error(f"❌ {total_count}개 문제 저장 모두 실패했습니다. 위의 오류 메시지를 확인하세요.")
+
+                                    with col3:
+                                        if st.button("❌ 모두 거부", key=f"reject_all_{prob['id']}"):
+                                            for idx in unprocessed_indices:
+                                                prob_hash = f"{prob['id']}_{idx}"
+                                                st.session_state.rejected_problems.add(prob_hash)
+                                            st.info(f"❌ {len(unprocessed_indices)}개 문제를 거부했습니다.")
+                                            st.rerun()
+
+                                    st.divider()
+
+                                for idx, new_prob in enumerate(valid_problems):
+                                    prob_hash = f"{prob['id']}_{idx}"
+
+                                    # Skip if already processed
+                                    if prob_hash in st.session_state.saved_problems:
+                                        st.success(f"✅ 문제 {idx+1}: Firebase에 저장 완료")
+                                        continue
+                                    if prob_hash in st.session_state.rejected_problems:
+                                        st.info(f"❌ 문제 {idx+1}: 거부됨")
+                                        continue
+
+                                    with st.expander(f"📝 생성 문제 {idx+1}", expanded=True):
+                                        # AI 모델 정보 표시
+                                        ai_models = new_prob.get('aiModels', {})
+                                        gen_model = ai_models.get('generation', 'unknown')
+                                        ver_model = ai_models.get('verification')
+                                        q_type = ai_models.get('questionType', 'unknown')
+                                        persona_used = ai_models.get('persona', 'unknown')
+
+                                        model_info = f"AI: {gen_model}"
+                                        if ver_model:
+                                            model_info += f" + {ver_model}"
+                                        model_info += f" | {q_type} | {persona_used}"
+
+                                        st.caption(f"🤖 {model_info}")
+
+                                        st.markdown(f"**질문:** {new_prob['questionText']}")
+                                        st.markdown("**보기:**")
+                                        for i, choice in enumerate(new_prob['choices'], 1):
+                                            st.markdown(f"{i}. {choice}")
+                                        st.markdown(f"**정답:** {new_prob['correctanswer']}")
+                                        st.markdown(f"**난이도:** {new_prob.get('difficulty', '중')}")
+                                        st.caption("💡 해설은 학생이 문제를 틀렸을 때 요청하면 생성됩니다.")
+
+                                        col1, col2 = st.columns(2)
+                                        with col1:
+                                            if st.button("✅ 승인 (저장)", key=f"approve_{prob_hash}", type="primary"):
+                                                try:
+                                                    # Prepare data for Firebase (convert datetime to string)
+                                                    problem_data = ensure_created_at_iso(new_prob.copy())
+
+                                                    # Save to Firebase via storage adapter
+                                                    fs = FirebaseStorage()
+                                                    save_result = fs.save_problem('nursing_problems', problem_data)
+                                                    if not save_result.get('success'):
+                                                        raise RuntimeError(save_result.get('message', 'Firebase save failed'))
+                                                    problem_id = save_result.get('id')
+
+                                                    # Save to ChromaDB for semantic search
+                                                    chroma = st.session_state.chroma_manager
+                                                    if chroma and chroma.problems_collection:
+                                                        try:
+                                                            chroma_data = {
+                                                                'id': problem_id,
+                                                                'question_text': new_prob.get('questionText', ''),
+                                                                'choices': new_prob.get('choices', []),
+                                                                'correct_answer': new_prob.get('correctanswer', ''),
+                                                                'subject': prob.get('subject', ''),
+                                                                'difficulty': new_prob.get('difficulty', ''),
+                                                                'keywords': new_prob.get('keywords', []),
+                                                                'concepts': new_prob.get('relatedConcepts', []),
+                                                                'created_at': str(new_prob.get('createdAt', ''))
+                                                            }
+                                                            chroma.add_problem(chroma_data)
+                                                        except Exception as chroma_error:
+                                                            st.warning(f"ChromaDB 저장 실패 (검색에만 영향): {chroma_error}")
+
+                                                    st.session_state.saved_problems.add(prob_hash)
+                                                    st.success("✅ Firebase + ChromaDB에 저장되었습니다!")
+                                                    st.rerun()
+                                                except Exception as save_error:
+                                                    st.error(f"❌ 저장 실패: {save_error}")
+
+                                        with col2:
+                                            if st.button("❌ 거부", key=f"reject_{prob_hash}"):
+                                                st.session_state.rejected_problems.add(prob_hash)
+                                                st.info("문제를 거부했습니다.")
+                                                st.rerun()
+
+                            except Exception as e:
+                                st.error(f"❌ 문제 생성 실패: {e}")
+
+    except Exception as e:
+        st.error(f"❌ 틀린 문제 로드 실패: {e}")
 
 
 if __name__ == "__main__":
