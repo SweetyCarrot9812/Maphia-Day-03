@@ -513,17 +513,20 @@ def concept_manual_input_form():
                                 'title': title_text[:100],
                                 'description': desc_text[:500],
                                 'category': concept_data['category'],
-                                'keywords': ', '.join(concept_data['keywords']),
-                                'tags': ', '.join(concept_data['tags']),
+                                'keywords': ', '.join(concept_data['keywords']) if concept_data['keywords'] else '',
+                                'tags': ', '.join(concept_data['tags']) if concept_data['tags'] else '',
                                 'createdBy': concept_data['createdBy'],
                                 'createdAt': concept_data['created_at'],
                                 'hasImage': concept_data['hasImage'],
-                                'imageUrl': image_url,
-                                'imageUrls': image_urls,
-                                'localImagePath': local_image_path,
+                                'imageUrl': image_url if image_url else '',
+                                'imageUrls': image_urls if image_urls else '',
+                                'localImagePath': local_image_path if local_image_path else '',
                                 'imageCount': len(concept_data['images']) if concept_data['images'] else 0,
                                 'type': 'concept'
                             }
+
+                            # Remove None values from metadata (ChromaDB requirement)
+                            metadata = {k: v if v is not None else '' for k, v in metadata.items()}
 
                             # Generate 768d embedding explicitly with gemini-embedding-001
                             import google.generativeai as genai

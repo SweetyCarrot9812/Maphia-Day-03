@@ -544,26 +544,29 @@ def problem_manual_input_form():
                                 # Get local path for first image
                                 local_image_path = first_image.get('local_path', '')
 
-                            # Prepare metadata
+                            # Prepare metadata (ChromaDB does not accept None values)
                             metadata = {
                                 'title': problem_data['questionText'][:100],
                                 'description': problem_data['questionText'][:500],
                                 'subject': problem_data['subject'],
                                 'difficulty': problem_data['difficulty'],
                                 'field': problem_data['field'],
-                                'tags': ', '.join(problem_data['tags']),
-                                'concepts': ', '.join(problem_data['concepts']),
-                                'keywords': ', '.join(problem_data['keywords']),
+                                'tags': ', '.join(problem_data['tags']) if problem_data['tags'] else '',
+                                'concepts': ', '.join(problem_data['concepts']) if problem_data['concepts'] else '',
+                                'keywords': ', '.join(problem_data['keywords']) if problem_data['keywords'] else '',
                                 'correctAnswer': problem_data['correctAnswer'],
                                 'createdBy': problem_data['createdBy'],
                                 'createdAt': problem_data['created_at'],
                                 'hasImage': problem_data['hasImage'],
-                                'imageUrl': image_url,
-                                'imageUrls': image_urls,
-                                'localImagePath': local_image_path,
+                                'imageUrl': image_url if image_url else '',
+                                'imageUrls': image_urls if image_urls else '',
+                                'localImagePath': local_image_path if local_image_path else '',
                                 'imageCount': len(problem_data['images']) if problem_data['images'] else 0,
                                 'type': 'problem'
                             }
+
+                            # Remove None values from metadata (ChromaDB requirement)
+                            metadata = {k: v if v is not None else '' for k, v in metadata.items()}
 
                             # Generate embedding using Gemini text-embedding-004 (768 dimensions)
                             from rag_engine import rag_engine
