@@ -62,7 +62,7 @@ def problem_manual_input_form():
             if field == "간호":
                 subject = st.selectbox("과목 *", [
                     "기본간호학", "성인간호학", "아동간호학", "모성간호학",
-                    "정신간호학", "지역사회간호학", "간호관리학"
+                    "정신간호학", "지역사회간호학", "간호관리학", "보건의약관계법규"
                 ], help="문제가 속하는 과목을 선택하세요", key="problem_subject")
             else:  # 의학
                 subject = st.selectbox("과목 *", [
