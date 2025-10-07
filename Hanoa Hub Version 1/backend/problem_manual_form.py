@@ -6,36 +6,90 @@ import uuid
 from datetime import datetime
 
 
+def handle_problem_image_upload():
+    """Handle image upload with automatic compression for problems"""
+    st.subheader("[IMAGE] 이미지 업로드 (선택사항)")
+
+    uploaded_images = st.file_uploader(
+        "문제 관련 이미지 (여러 개 선택 가능)",
+        type=['png', 'jpg', 'jpeg', 'webp'],
+        accept_multiple_files=True,
+        help="문제와 관련된 의료 이미지, 도식, 차트 등을 업로드하세요 (PNG, JPG, JPEG, WebP 지원)",
+        key="problem_images"
+    )
+
+    processed_images = []
+
+    if uploaded_images:
+        from image_utils import image_processor
+
+        st.success(f"[AUTO] {len(uploaded_images)}개 이미지 자동 압축 중...")
+
+        # Auto-process images immediately
+        with st.spinner("[PROCESSING] 이미지 압축 중..."):
+            # Compress images only (no Firebase upload yet)
+            compressed_images = []
+            for idx, uploaded_file in enumerate(uploaded_images):
+                # Compress image
+                compressed_bytes, file_ext = image_processor.compress_image(uploaded_file)
+
+                if compressed_bytes:
+                    # Calculate compression info
+                    original_size = len(uploaded_file.getvalue())
+                    compressed_size = len(compressed_bytes)
+                    compression_ratio = (1 - compressed_size / original_size) * 100
+
+                    # Store compressed data in memory (no Firebase upload yet)
+                    compressed_images.append({
+                        'original_name': uploaded_file.name,
+                        'compressed_bytes': compressed_bytes,
+                        'file_ext': file_ext,
+                        'original_size': original_size,
+                        'compressed_size': compressed_size,
+                        'compression_ratio': compression_ratio
+                    })
+
+        if compressed_images:
+            st.success(f"[SUCCESS] {len(compressed_images)}개 이미지 압축 완료!")
+
+            # Show preview
+            cols = st.columns(min(len(compressed_images), 3))
+            for idx, img_data in enumerate(compressed_images[:3]):
+                with cols[idx % 3]:
+                    st.image(img_data['compressed_bytes'],
+                            caption=f"{img_data['original_name']}\n압축률: {img_data['compression_ratio']:.1f}%",
+                            width=150)
+
+            if len(compressed_images) > 3:
+                st.info(f"[INFO] 추가 {len(compressed_images)-3}개 이미지")
+
+            # Store in session state for later Firebase upload
+            st.session_state.problem_compressed_images = compressed_images
+            st.info("[INFO] 이미지가 준비되었습니다. 문제 정보를 입력하고 [SAVE] 버튼을 누르면 저장됩니다.")
+        else:
+            st.error("[ERROR] 이미지 압축에 실패했습니다")
+
+    # Check if there are compressed images in session state
+    if 'problem_compressed_images' in st.session_state and not uploaded_images:
+        compressed_images = st.session_state.problem_compressed_images
+        st.info(f"[READY] {len(compressed_images)}개 압축된 이미지가 저장 대기 중입니다")
+        processed_images = compressed_images
+
+    return st.session_state.get('problem_compressed_images', [])
+
+
 def problem_manual_input_form():
     """Manual form for inputting medical/nursing problems without AI analysis"""
     st.subheader("[MANUAL] 문제 수동 입력")
 
+    # Handle image upload outside of form
+    handle_problem_image_upload()
+
+    st.divider()
+
     with st.form("problem_manual_form"):
         # Field selection (nursing/medical)
         field = st.selectbox("분야 선택 *", ["간호", "의학"], help="문제가 속하는 분야를 선택하세요", key="problem_field")
-
-        # Image upload section with multiple files support
-        st.subheader("[IMAGE] 이미지 업로드 (선택사항)")
-
-        uploaded_images = st.file_uploader(
-            "문제 관련 이미지 (여러 개 선택 가능)",
-            type=['png', 'jpg', 'jpeg', 'webp'],
-            accept_multiple_files=True,
-            help="문제와 관련된 의료 이미지, 도식, 차트 등을 업로드하세요 (PNG, JPG, JPEG, WebP 지원)"
-        )
-
-        # Display uploaded images
-        if uploaded_images:
-            st.write(f"[INFO] {len(uploaded_images)}개 이미지 업로드됨")
-            cols = st.columns(min(len(uploaded_images), 3))
-            for idx, img in enumerate(uploaded_images[:3]):
-                with cols[idx % 3]:
-                    st.image(img, caption=f"이미지 {idx+1}", width=150)
-
-            if len(uploaded_images) > 3:
-                st.info(f"[INFO] 추가 {len(uploaded_images)-3}개 이미지가 더 있습니다")
-
-        st.divider()
 
         # Manual input fields based on user requirements
         st.subheader("[INPUT] 문제 정보 직접 입력")
@@ -130,6 +184,46 @@ def problem_manual_input_form():
         submitted = st.form_submit_button("[SAVE] 문제 저장")
 
         if submitted:
+            # Get compressed images from session state
+            compressed_images = st.session_state.get('problem_compressed_images', [])
+
+            # Upload compressed images to Firebase Storage now
+            processed_images = []
+            if compressed_images:
+                st.info(f"[UPLOAD] {len(compressed_images)}개 이미지를 Firebase Storage에 업로드 중...")
+                from image_utils import image_processor
+
+                for img_data in compressed_images:
+                    # Generate unique filename
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    unique_id = str(uuid.uuid4())[:8]
+                    file_name = f"problem_{timestamp}_{unique_id}.{img_data['file_ext']}"
+
+                    # Save to local first
+                    local_path = image_processor.save_to_local(img_data['compressed_bytes'], file_name)
+
+                    # Upload to Firebase Storage
+                    public_url = image_processor.upload_to_firebase_storage(
+                        img_data['compressed_bytes'],
+                        file_name,
+                        'image/webp'
+                    )
+
+                    processed_images.append({
+                        'original_name': img_data['original_name'],
+                        'file_name': file_name,
+                        'public_url': public_url if public_url else None,
+                        'local_path': local_path if local_path else None,
+                        'content_type': 'image/webp',
+                        'original_size': img_data['original_size'],
+                        'compressed_size': img_data['compressed_size'],
+                        'compression_ratio': img_data['compression_ratio'],
+                        'uploaded_at': datetime.now().isoformat()
+                    })
+
+                if processed_images:
+                    st.success(f"[SUCCESS] {len(processed_images)}개 이미지 Firebase 업로드 완료!")
+
             # Validate required fields
             missing_fields = []
             non_empty_choices = [c for c in choices if c.strip()]
@@ -170,7 +264,8 @@ def problem_manual_input_form():
                     'keywords': [k.strip() for k in keywords.split(',') if k.strip()] if keywords else [],
                     'field': field,
                     'created_at': datetime.now().isoformat(),
-                    'hasImage': bool(uploaded_images),
+                    'hasImage': bool(processed_images),
+                    'images': processed_images if processed_images else [],
                     'createdBy': 'streamlit_user'
                 }
 
@@ -252,6 +347,27 @@ def problem_manual_input_form():
                             키워드: {', '.join(problem_data['keywords'])}
                             """
 
+                            # Extract image URLs for metadata
+                            image_url = ""
+                            image_urls = ""
+                            local_image_path = ""
+
+                            if problem_data['hasImage'] and problem_data['images']:
+                                # Get first image URL (Firebase or local)
+                                first_image = problem_data['images'][0]
+                                image_url = first_image.get('public_url') or first_image.get('local_path', '')
+
+                                # Get all image URLs (comma-separated)
+                                all_urls = []
+                                for img in problem_data['images']:
+                                    url = img.get('public_url') or img.get('local_path', '')
+                                    if url:
+                                        all_urls.append(url)
+                                image_urls = ', '.join(all_urls)
+
+                                # Get local path for first image
+                                local_image_path = first_image.get('local_path', '')
+
                             # Prepare metadata
                             metadata = {
                                 'title': problem_data['questionText'][:100],
@@ -266,6 +382,10 @@ def problem_manual_input_form():
                                 'createdBy': problem_data['createdBy'],
                                 'createdAt': problem_data['created_at'],
                                 'hasImage': problem_data['hasImage'],
+                                'imageUrl': image_url,
+                                'imageUrls': image_urls,
+                                'localImagePath': local_image_path,
+                                'imageCount': len(problem_data['images']) if problem_data['images'] else 0,
                                 'type': 'problem'
                             }
 
@@ -306,6 +426,7 @@ def problem_manual_input_form():
                                     'createdAt': problem_data['created_at'],
                                     'createdBy': problem_data['createdBy'],
                                     'hasImage': problem_data['hasImage'],
+                                    'images': problem_data['images'],
                                     'type': 'problem',
                                     'similarity_check': {
                                         'max_similarity': max_similarity,
@@ -327,6 +448,10 @@ def problem_manual_input_form():
                             # Final success message
                             st.balloons()
                             st.success("[COMPLETE] 문제 저장이 완료되었습니다!")
+
+                            # Clear session state after successful save
+                            if 'problem_compressed_images' in st.session_state:
+                                del st.session_state.problem_compressed_images
 
                         except Exception as e:
                             st.error(f"[ERROR] 저장 실패: {e}")
