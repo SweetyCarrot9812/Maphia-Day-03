@@ -53,7 +53,7 @@ def handle_image_upload():
     # Image source selection
     image_source = st.radio(
         "이미지 선택 방식:",
-        ["📁 기존 이미지 라이브러리에서 선택", "📤 새 이미지 업로드"],
+        ["📤 새 이미지 업로드", "📁 기존 이미지 라이브러리에서 선택"],
         horizontal=True,
         key="concept_image_source"
     )
