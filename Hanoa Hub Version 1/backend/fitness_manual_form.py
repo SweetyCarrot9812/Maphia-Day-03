@@ -6,30 +6,172 @@ import uuid
 from datetime import datetime
 
 
+def get_image_library():
+    """Fetch all images from ChromaDB collections"""
+    try:
+        from rag_engine_multi_domain import multi_domain_rag_engine
+
+        all_images = []
+        collections = ['nursing_questions', 'medical_problems', 'fitness_concepts', 'medical_concepts']
+
+        for coll_name in collections:
+            try:
+                collection = multi_domain_rag_engine.chroma_client.get_collection(coll_name)
+                results = collection.get(
+                    where={"hasImage": True},
+                    include=['metadatas']
+                )
+
+                if results and results.get('metadatas'):
+                    for metadata in results['metadatas']:
+                        if metadata.get('imageUrl') or metadata.get('imageUrls'):
+                            image_urls = metadata.get('imageUrls', '').split(', ') if metadata.get('imageUrls') else [metadata.get('imageUrl', '')]
+
+                            for url in image_urls:
+                                if url:
+                                    all_images.append({
+                                        'url': url,
+                                        'title': metadata.get('title', '')[:100],
+                                        'subject': metadata.get('subject', ''),
+                                        'field': metadata.get('field', ''),
+                                        'collection': coll_name,
+                                        'created_at': metadata.get('createdAt', '')
+                                    })
+            except:
+                continue
+
+        return all_images
+    except Exception as e:
+        st.warning(f"[WARNING] 이미지 라이브러리 로딩 실패: {e}")
+        return []
+
+
 def handle_fitness_image_upload():
     """Handle image upload with automatic compression for fitness concepts"""
-    st.subheader("[IMAGE] 이미지 업로드 (선택사항)")
+    st.subheader("[IMAGE] 이미지 관리")
 
-    uploaded_images = st.file_uploader(
-        "운동/영양 관련 이미지 (여러 개 선택 가능)",
-        type=['png', 'jpg', 'jpeg', 'webp'],
-        accept_multiple_files=True,
-        help="운동 폼, 영양 차트, 음식 사진 등을 업로드하세요 (PNG, JPG, JPEG, WebP 지원)",
-        key="fitness_images"
+    # Image source selection
+    image_source = st.radio(
+        "이미지 선택 방식:",
+        ["📁 기존 이미지 라이브러리에서 선택", "📤 새 이미지 업로드"],
+        horizontal=True,
+        key="fitness_image_source"
     )
+
+    if image_source == "📁 기존 이미지 라이브러리에서 선택":
+        st.info("[LIBRARY] 기존에 업로드된 이미지를 검색하고 선택하세요")
+
+        # Get all images from library
+        with st.spinner("[LOADING] 이미지 라이브러리 로딩 중..."):
+            image_library = get_image_library()
+
+        if not image_library:
+            st.warning("[EMPTY] 라이브러리에 이미지가 없습니다. 새 이미지를 업로드하세요.")
+            return []
+
+        # Search and filter
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            search_query = st.text_input(
+                "검색어",
+                placeholder="제목, 과목, 분야로 검색...",
+                key="fitness_library_search"
+            )
+        with col2:
+            filter_field = st.selectbox(
+                "분야 필터",
+                ["전체", "간호", "의학", "fitness"],
+                key="fitness_library_filter"
+            )
+
+        # Filter images based on search
+        filtered_images = image_library
+        if search_query:
+            filtered_images = [
+                img for img in filtered_images
+                if search_query.lower() in img['title'].lower() or
+                   search_query.lower() in img['subject'].lower()
+            ]
+
+        if filter_field != "전체":
+            filtered_images = [img for img in filtered_images if img['field'] == filter_field]
+
+        st.info(f"[RESULTS] {len(filtered_images)}개 이미지 발견")
+
+        if filtered_images:
+            # Display images in grid with checkboxes
+            selected_images = []
+
+            # Create grid (3 columns)
+            num_cols = 3
+            for i in range(0, len(filtered_images[:12]), num_cols):  # Show max 12
+                cols = st.columns(num_cols)
+                for col_idx, img_data in enumerate(filtered_images[i:i+num_cols]):
+                    with cols[col_idx]:
+                        try:
+                            st.image(img_data['url'], width=150, use_container_width=True)
+                        except:
+                            st.write("🖼️ [이미지]")
+
+                        selected = st.checkbox(
+                            f"{img_data['subject']} - {img_data['title'][:30]}...",
+                            key=f"select_fitness_library_img_{i+col_idx}"
+                        )
+
+                        if selected:
+                            selected_images.append(img_data)
+
+            if len(filtered_images) > 12:
+                st.info(f"[MORE] +{len(filtered_images) - 12}개 이미지가 더 있습니다. 검색어로 좁혀보세요.")
+
+            # Store selected images in session state
+            if selected_images:
+                st.success(f"[SELECTED] {len(selected_images)}개 이미지 선택됨")
+                # Convert to compressed image format for compatibility
+                compressed_images = []
+                for img in selected_images:
+                    compressed_images.append({
+                        'original_name': img['title'],
+                        'compressed_bytes': None,  # Already uploaded
+                        'file_ext': 'webp',
+                        'original_size': 0,
+                        'compressed_size': 0,
+                        'compression_ratio': 0,
+                        'from_library': True,
+                        'public_url': img['url']
+                    })
+                st.session_state.fitness_compressed_images = compressed_images
+                return compressed_images
+
+        return []
+
+    else:  # 새 이미지 업로드
+        uploaded_images = st.file_uploader(
+            "운동/영양 관련 이미지 (여러 개 선택 가능)",
+            type=['png', 'jpg', 'jpeg', 'webp'],
+            accept_multiple_files=True,
+            help="운동 폼, 영양 차트, 음식 사진 등을 업로드하세요 (PNG, JPG, JPEG, WebP 지원)",
+            key="fitness_images"
+        )
 
     processed_images = []
 
     if uploaded_images:
         from image_utils import image_processor
+        import hashlib
 
         st.success(f"[AUTO] {len(uploaded_images)}개 이미지 자동 압축 중...")
 
         # Auto-process images immediately
-        with st.spinner("[PROCESSING] 이미지 압축 중..."):
+        with st.spinner("[PROCESSING] 이미지 압축 및 중복 검사 중..."):
             # Compress images only (no Firebase upload yet)
             compressed_images = []
+
             for idx, uploaded_file in enumerate(uploaded_images):
+                # Generate hash for duplicate detection
+                image_bytes = uploaded_file.getvalue()
+                image_hash = hashlib.sha256(image_bytes).hexdigest()
+
                 # Compress image
                 compressed_bytes, file_ext = image_processor.compress_image(uploaded_file)
 
@@ -46,7 +188,8 @@ def handle_fitness_image_upload():
                         'file_ext': file_ext,
                         'original_size': original_size,
                         'compressed_size': compressed_size,
-                        'compression_ratio': compression_ratio
+                        'compression_ratio': compression_ratio,
+                        'image_hash': image_hash
                     })
 
         if compressed_images:
@@ -237,39 +380,62 @@ def fitness_concept_input_form():
             # Upload compressed images to Firebase Storage now
             processed_images = []
             if compressed_images:
-                st.info(f"[UPLOAD] {len(compressed_images)}개 이미지를 Firebase Storage에 업로드 중...")
                 from image_utils import image_processor
 
-                for img_data in compressed_images:
-                    # Generate unique filename
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    unique_id = str(uuid.uuid4())[:8]
-                    file_name = f"fitness_{timestamp}_{unique_id}.{img_data['file_ext']}"
+                # Separate library images from new uploads
+                library_images = [img for img in compressed_images if img.get('from_library')]
+                new_uploads = [img for img in compressed_images if not img.get('from_library')]
 
-                    # Save to local first
-                    local_path = image_processor.save_to_local(img_data['compressed_bytes'], file_name)
+                if library_images:
+                    st.info(f"[REUSE] {len(library_images)}개 이미지를 라이브러리에서 재사용")
+                    for img_data in library_images:
+                        processed_images.append({
+                            'original_name': img_data['original_name'],
+                            'file_name': img_data['original_name'],
+                            'public_url': img_data['public_url'],
+                            'local_path': None,
+                            'content_type': 'image/webp',
+                            'original_size': 0,
+                            'compressed_size': 0,
+                            'compression_ratio': 0,
+                            'uploaded_at': datetime.now().isoformat(),
+                            'from_library': True
+                        })
 
-                    # Upload to Firebase Storage
-                    public_url = image_processor.upload_to_firebase_storage(
-                        img_data['compressed_bytes'],
-                        file_name,
-                        'image/webp'
-                    )
+                if new_uploads:
+                    st.info(f"[UPLOAD] {len(new_uploads)}개 새 이미지를 Firebase Storage에 업로드 중...")
 
-                    processed_images.append({
-                        'original_name': img_data['original_name'],
-                        'file_name': file_name,
-                        'public_url': public_url if public_url else None,
-                        'local_path': local_path if local_path else None,
-                        'content_type': 'image/webp',
-                        'original_size': img_data['original_size'],
-                        'compressed_size': img_data['compressed_size'],
-                        'compression_ratio': img_data['compression_ratio'],
-                        'uploaded_at': datetime.now().isoformat()
-                    })
+                    for img_data in new_uploads:
+                        # Generate unique filename with hash
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        image_hash_short = img_data.get('image_hash', str(uuid.uuid4()))[:8]
+                        file_name = f"fitness_{timestamp}_{image_hash_short}.{img_data['file_ext']}"
+
+                        # Save to local first
+                        local_path = image_processor.save_to_local(img_data['compressed_bytes'], file_name)
+
+                        # Upload to Firebase Storage
+                        public_url = image_processor.upload_to_firebase_storage(
+                            img_data['compressed_bytes'],
+                            file_name,
+                            'image/webp'
+                        )
+
+                        processed_images.append({
+                            'original_name': img_data['original_name'],
+                            'file_name': file_name,
+                            'public_url': public_url if public_url else None,
+                            'local_path': local_path if local_path else None,
+                            'content_type': 'image/webp',
+                            'original_size': img_data['original_size'],
+                            'compressed_size': img_data['compressed_size'],
+                            'compression_ratio': img_data['compression_ratio'],
+                            'uploaded_at': datetime.now().isoformat(),
+                            'image_hash': img_data.get('image_hash')
+                        })
 
                 if processed_images:
-                    st.success(f"[SUCCESS] {len(processed_images)}개 이미지 Firebase 업로드 완료!")
+                    st.success(f"[SUCCESS] 총 {len(processed_images)}개 이미지 준비 완료! (재사용: {len(library_images)}, 신규: {len(new_uploads)})")
 
             # Validate required fields
             missing_fields = []
