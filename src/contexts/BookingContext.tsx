@@ -27,6 +27,9 @@ type BookingAction =
   | { type: 'CREATE_BOOKING_REQUEST' }
   | { type: 'CREATE_BOOKING_SUCCESS'; payload: Booking }
   | { type: 'CREATE_BOOKING_FAILURE'; payload: string }
+  | { type: 'CANCEL_BOOKING_REQUEST' }
+  | { type: 'CANCEL_BOOKING_SUCCESS'; payload: string }
+  | { type: 'CANCEL_BOOKING_FAILURE'; payload: string }
   | { type: 'CLEAR_CURRENT_BOOKING' };
 
 interface BookingContextValue {
@@ -37,6 +40,7 @@ interface BookingContextValue {
   loadBookings: () => Promise<void>;
   setBookingInfo: (info: Partial<BookingFormData>) => void;
   createBooking: (concertId: string, seatIds: string[], totalAmount: number) => Promise<Booking>;
+  cancelBooking: (bookingId: string) => Promise<void>;
   clearCurrentBooking: () => void;
   upcomingBookings: BookingWithConcert[];
   pastBookings: BookingWithConcert[];
@@ -74,6 +78,21 @@ function bookingReducer(state: BookingState, action: BookingAction): BookingStat
       };
 
     case 'CREATE_BOOKING_FAILURE':
+      return { ...state, error: action.payload, loading: false };
+
+    case 'CANCEL_BOOKING_REQUEST':
+      return { ...state, loading: true, error: null };
+
+    case 'CANCEL_BOOKING_SUCCESS':
+      return {
+        ...state,
+        bookings: state.bookings.map((booking) =>
+          booking.id === action.payload ? { ...booking, status: 'cancelled' as const } : booking
+        ),
+        loading: false,
+      };
+
+    case 'CANCEL_BOOKING_FAILURE':
       return { ...state, error: action.payload, loading: false };
 
     case 'CLEAR_CURRENT_BOOKING':
@@ -148,6 +167,21 @@ export function BookingProvider({ children }: { children: ReactNode }) {
     [state.currentBooking]
   );
 
+  const cancelBooking = useCallback(async (bookingId: string) => {
+    dispatch({ type: 'CANCEL_BOOKING_REQUEST' });
+
+    try {
+      await bookingRepository.cancel(bookingId);
+      dispatch({ type: 'CANCEL_BOOKING_SUCCESS', payload: bookingId });
+    } catch (error) {
+      dispatch({
+        type: 'CANCEL_BOOKING_FAILURE',
+        payload: error instanceof Error ? error.message : 'Failed to cancel booking',
+      });
+      throw error;
+    }
+  }, []);
+
   const clearCurrentBooking = useCallback(() => {
     dispatch({ type: 'CLEAR_CURRENT_BOOKING' });
   }, []);
@@ -180,6 +214,7 @@ export function BookingProvider({ children }: { children: ReactNode }) {
     loadBookings,
     setBookingInfo,
     createBooking,
+    cancelBooking,
     clearCurrentBooking,
     upcomingBookings,
     pastBookings,

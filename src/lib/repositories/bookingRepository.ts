@@ -96,4 +96,28 @@ export const bookingRepository = {
       concert: Array.isArray(data.concert) ? data.concert[0] : data.concert,
     };
   },
+
+  async cancel(id: string): Promise<void> {
+    // 예약 정보 조회
+    const { data: booking, error: fetchError } = await supabase
+      .from('bookings')
+      .select('seat_ids, status')
+      .eq('id', id)
+      .single();
+
+    if (fetchError) throw new Error(fetchError.message);
+    if (!booking) throw new Error('예약을 찾을 수 없습니다');
+    if (booking.status === 'cancelled') throw new Error('이미 취소된 예약입니다');
+
+    // 예약 상태 취소로 업데이트
+    const { error: updateError } = await supabase
+      .from('bookings')
+      .update({ status: 'cancelled' })
+      .eq('id', id);
+
+    if (updateError) throw new Error(updateError.message);
+
+    // 좌석 상태 원복 (예약 해제)
+    await seatRepository.updateBooked(booking.seat_ids, false);
+  },
 };
