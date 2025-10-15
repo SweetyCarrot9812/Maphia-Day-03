@@ -40,14 +40,18 @@ export default function BookingCard({ booking }: BookingCardProps) {
       <div className="mb-4">
         <p className="text-sm text-gray-500 mb-2">예약 좌석</p>
         <div className="flex flex-wrap gap-2">
-          {booking.seat_ids.map((seatId) => (
-            <span
-              key={seatId}
-              className="px-3 py-1 bg-blue-50 text-blue-700 rounded-md text-sm font-medium"
-            >
-              {seatId}
-            </span>
-          ))}
+          {booking.seats && booking.seats.length > 0 ? (
+            booking.seats.map((seat, index) => (
+              <span
+                key={index}
+                className="px-3 py-1 bg-blue-50 text-blue-700 rounded-md text-sm font-medium"
+              >
+                {seat.row}행 {seat.number}번 ({seat.grade}석)
+              </span>
+            ))
+          ) : (
+            <span className="text-gray-500 text-sm">좌석 정보를 불러오는 중...</span>
+          )}
         </div>
       </div>
 

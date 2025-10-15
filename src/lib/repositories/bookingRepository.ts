@@ -57,10 +57,25 @@ export const bookingRepository = {
       .order('created_at', { ascending: false });
 
     if (error) throw new Error(error.message);
-    return (data || []).map((item) => ({
-      ...item,
-      concert: Array.isArray(item.concert) ? item.concert[0] : item.concert,
-    }));
+
+    // 각 예약의 좌석 정보 가져오기
+    const bookingsWithSeats = await Promise.all(
+      (data || []).map(async (item) => {
+        // seat_ids 배열에 있는 좌석 정보 조회
+        const { data: seats } = await supabase
+          .from('seats')
+          .select('row, number, grade')
+          .in('id', item.seat_ids);
+
+        return {
+          ...item,
+          concert: Array.isArray(item.concert) ? item.concert[0] : item.concert,
+          seats: seats || [],
+        };
+      })
+    );
+
+    return bookingsWithSeats;
   },
 
   async fetchById(id: string): Promise<BookingWithConcert | null> {

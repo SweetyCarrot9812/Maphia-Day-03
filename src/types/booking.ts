@@ -27,4 +27,9 @@ export interface BookingWithConcert extends Booking {
     venue: string;
     image_url: string | null;
   };
+  seats?: Array<{
+    row: number;
+    number: number;
+    grade: string;
+  }>;
 }
