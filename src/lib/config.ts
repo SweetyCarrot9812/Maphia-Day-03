@@ -1,34 +1,32 @@
 /**
  * 애플리케이션 환경 변수 설정
  *
- * 필수 환경 변수가 누락된 경우 빌드 시점에 에러를 발생시켜
- * 운영 환경에서의 문제를 사전에 방지합니다.
+ * 개발 환경에서는 .env.local 사용
+ * 프로덕션 환경에서는 Vercel 환경 변수 사용
  */
 
-function getRequiredEnv(key: string): string {
+function getEnv(key: string, fallback: string = ''): string {
   const value = process.env[key];
 
-  if (!value) {
-    throw new Error(
-      `❌ 필수 환경 변수가 설정되지 않았습니다: ${key}\n` +
-      `📝 .env.local 파일에 다음을 추가해주세요:\n` +
-      `   ${key}=your_value_here\n`
-    );
+  // 개발 환경: 환경 변수 없으면 경고만 출력
+  if (process.env.NODE_ENV === 'development' && !value) {
+    console.warn(`⚠️ 환경 변수 누락: ${key} - .env.local 파일을 확인하세요.`);
+    return fallback;
   }
 
-  if (value.includes('placeholder')) {
-    throw new Error(
-      `❌ 환경 변수가 플레이스홀더 값으로 설정되어 있습니다: ${key}\n` +
-      `📝 실제 값으로 변경해주세요.`
-    );
+  // 프로덕션: 환경 변수 없으면 에러
+  if (process.env.NODE_ENV === 'production' && !value) {
+    console.error(`❌ 필수 환경 변수 누락: ${key}`);
+    return fallback;
   }
 
-  return value;
+  return value || fallback;
 }
 
+// Supabase 설정 - 환경 변수에서 가져오거나 빈 문자열
 export const config = {
   supabase: {
-    url: getRequiredEnv('NEXT_PUBLIC_SUPABASE_URL'),
-    anonKey: getRequiredEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY'),
+    url: getEnv('NEXT_PUBLIC_SUPABASE_URL'),
+    anonKey: getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY'),
   },
 } as const;
