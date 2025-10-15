@@ -3,6 +3,8 @@ import './globals.css';
 import { ConcertProvider } from '@/contexts/ConcertContext';
 import { SeatProvider } from '@/contexts/SeatContext';
 import { BookingProvider } from '@/contexts/BookingContext';
+import { ToastProvider } from '@/contexts/ToastContext';
+import ErrorBoundary from '@/components/common/ErrorBoundary';
 import Header from '@/components/common/Header';
 
 export const metadata: Metadata = {
@@ -18,16 +20,20 @@ export default function RootLayout({
   return (
     <html lang="ko">
       <body>
-        <ConcertProvider>
-          <SeatProvider>
-            <BookingProvider>
-              <Header />
-              <main className="container mx-auto px-4 py-8 min-h-screen">
-                {children}
-              </main>
-            </BookingProvider>
-          </SeatProvider>
-        </ConcertProvider>
+        <ErrorBoundary>
+          <ToastProvider>
+            <ConcertProvider>
+              <SeatProvider>
+                <BookingProvider>
+                  <Header />
+                  <main className="container mx-auto px-4 py-8 min-h-screen">
+                    {children}
+                  </main>
+                </BookingProvider>
+              </SeatProvider>
+            </ConcertProvider>
+          </ToastProvider>
+        </ErrorBoundary>
       </body>
     </html>
   );

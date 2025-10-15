@@ -57,23 +57,33 @@ export const bookingRepository = {
       .order('created_at', { ascending: false });
 
     if (error) throw new Error(error.message);
+    if (!data || data.length === 0) return [];
 
-    // 각 예약의 좌석 정보 가져오기
-    const bookingsWithSeats = await Promise.all(
-      (data || []).map(async (item) => {
-        // seat_ids 배열에 있는 좌석 정보 조회
-        const { data: seats } = await supabase
-          .from('seats')
-          .select('row, number, grade')
-          .in('id', item.seat_ids);
+    // N+1 쿼리 최적화: 모든 좌석 ID를 한 번에 조회
+    const allSeatIds = data.flatMap((booking) => booking.seat_ids);
+    const uniqueSeatIds = [...new Set(allSeatIds)];
 
-        return {
-          ...item,
-          concert: Array.isArray(item.concert) ? item.concert[0] : item.concert,
-          seats: seats || [],
-        };
-      })
+    // 모든 좌석 정보를 한 번의 쿼리로 가져오기
+    const { data: allSeats } = await supabase
+      .from('seats')
+      .select('id, row, number, grade')
+      .in('id', uniqueSeatIds);
+
+    // 좌석 ID를 키로 하는 Map 생성
+    const seatMap = new Map(
+      (allSeats || []).map((seat) => [seat.id, seat])
     );
+
+    // 각 예약에 해당하는 좌석 정보 매핑
+    type SeatData = { id: string; row: number; number: number; grade: string };
+    const bookingsWithSeats = data.map((item) => ({
+      ...item,
+      concert: Array.isArray(item.concert) ? item.concert[0] : item.concert,
+      seats: item.seat_ids
+        .map((seatId: string) => seatMap.get(seatId))
+        .filter((seat: SeatData | undefined): seat is SeatData => seat !== undefined)
+        .map(({ row, number, grade }: SeatData) => ({ row, number, grade })), // id 제외하고 반환
+    }));
 
     return bookingsWithSeats;
   },

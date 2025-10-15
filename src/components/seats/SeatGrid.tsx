@@ -1,15 +1,17 @@
-import { Seat } from '@/types';
+import { Seat, SeatLayout } from '@/types';
 import SeatButton from './SeatButton';
+import { GRID_SIZE, SEAT_LAYOUT } from '@/constants/ui';
 
 interface SeatGridProps {
   seats: Seat[];
   selectedSeats: Seat[];
   onToggleSeat: (seat: Seat) => void;
+  layout?: SeatLayout;
 }
 
-export default function SeatGrid({ seats, selectedSeats, onToggleSeat }: SeatGridProps) {
-  const ROWS = 15;
-  const COLS = 10;
+export default function SeatGrid({ seats, selectedSeats, onToggleSeat, layout }: SeatGridProps) {
+  const ROWS = layout?.rows ?? GRID_SIZE.DEFAULT_ROWS;
+  const COLS = layout?.columns ?? GRID_SIZE.DEFAULT_COLS;
 
   const getSeatByPosition = (row: number, col: number): Seat | undefined => {
     return seats.find((seat) => seat.row === row && seat.number === col);
@@ -27,18 +29,18 @@ export default function SeatGrid({ seats, selectedSeats, onToggleSeat }: SeatGri
       </div>
 
       {/* Seat Grid */}
-      <div className="flex flex-col gap-2">
+      <div className={`flex flex-col ${SEAT_LAYOUT.ROW_GAP}`}>
         {Array.from({ length: ROWS }, (_, rowIndex) => {
           const rowNumber = rowIndex + 1;
           return (
-            <div key={rowNumber} className="flex items-center gap-2">
+            <div key={rowNumber} className={`flex items-center ${SEAT_LAYOUT.SEAT_GAP}`}>
               {/* Row Number */}
-              <div className="w-8 text-center font-semibold text-gray-700">
+              <div className={`${SEAT_LAYOUT.ROW_NUMBER_WIDTH} text-center font-semibold text-gray-700`}>
                 {rowNumber}
               </div>
 
               {/* Seats in Row */}
-              <div className="flex gap-1">
+              <div className={`flex ${SEAT_LAYOUT.SEAT_GAP}`}>
                 {Array.from({ length: COLS }, (_, colIndex) => {
                   const seatNumber = colIndex + 1;
                   const seat = getSeatByPosition(rowNumber, seatNumber);
@@ -47,7 +49,7 @@ export default function SeatGrid({ seats, selectedSeats, onToggleSeat }: SeatGri
                     return (
                       <div
                         key={`${rowNumber}-${seatNumber}`}
-                        className="w-10 h-10"
+                        className={`${SEAT_LAYOUT.SEAT_SIZE.WIDTH} ${SEAT_LAYOUT.SEAT_SIZE.HEIGHT}`}
                       />
                     );
                   }

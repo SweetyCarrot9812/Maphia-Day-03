@@ -11,6 +11,7 @@ import {
 } from 'react';
 import { Booking, BookingFormData, BookingWithConcert } from '@/types';
 import { bookingRepository } from '@/lib/repositories/bookingRepository';
+import { isFutureDate, isPastDate } from '@/utils/date';
 
 interface BookingState {
   bookings: BookingWithConcert[];
@@ -189,7 +190,7 @@ export function BookingProvider({ children }: { children: ReactNode }) {
   const upcomingBookings = useMemo(
     () =>
       state.bookings.filter(
-        (booking) => booking.concert && new Date(booking.concert.date) > new Date()
+        (booking) => booking.concert && isFutureDate(booking.concert.date)
       ),
     [state.bookings]
   );
@@ -197,14 +198,37 @@ export function BookingProvider({ children }: { children: ReactNode }) {
   const pastBookings = useMemo(
     () =>
       state.bookings.filter(
-        (booking) => booking.concert && new Date(booking.concert.date) <= new Date()
+        (booking) => booking.concert && isPastDate(booking.concert.date)
       ),
     [state.bookings]
   );
 
   useEffect(() => {
-    loadBookings();
-  }, [loadBookings]);
+    let isMounted = true;
+
+    const fetchData = async () => {
+      try {
+        dispatch({ type: 'LOAD_BOOKINGS_REQUEST' });
+        const bookings = await bookingRepository.fetchAll();
+        if (isMounted) {
+          dispatch({ type: 'LOAD_BOOKINGS_SUCCESS', payload: bookings });
+        }
+      } catch (error) {
+        if (isMounted) {
+          dispatch({
+            type: 'LOAD_BOOKINGS_FAILURE',
+            payload: error instanceof Error ? error.message : 'Failed to load bookings',
+          });
+        }
+      }
+    };
+
+    fetchData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const value: BookingContextValue = {
     bookings: state.bookings,

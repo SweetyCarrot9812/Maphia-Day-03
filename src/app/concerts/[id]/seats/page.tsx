@@ -25,13 +25,13 @@ export default function SeatsPage({ params }: SeatsPageProps) {
   useEffect(() => {
     const loadSeatsData = async () => {
       try {
-        await loadSeats(unwrappedParams.id);
+        await loadSeats(unwrappedParams.id, selectedConcert?.max_seats_per_booking);
       } catch (err) {
         setLoadError(err instanceof Error ? err.message : '좌석 정보를 불러오는데 실패했습니다');
       }
     };
     loadSeatsData();
-  }, [unwrappedParams.id, loadSeats]);
+  }, [unwrappedParams.id, loadSeats, selectedConcert?.max_seats_per_booking]);
 
   const handleToggleSeat = (seat: Seat) => {
     try {
@@ -72,6 +72,7 @@ export default function SeatsPage({ params }: SeatsPageProps) {
               seats={seats}
               selectedSeats={selectedSeats}
               onToggleSeat={handleToggleSeat}
+              layout={selectedConcert?.seat_layout}
             />
           </div>
         </div>

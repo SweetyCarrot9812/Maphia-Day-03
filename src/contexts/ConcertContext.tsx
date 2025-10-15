@@ -11,6 +11,7 @@ import {
 } from 'react';
 import { Concert } from '@/types';
 import { concertRepository } from '@/lib/repositories/concertRepository';
+import { isFutureDate } from '@/utils/date';
 
 interface ConcertState {
   concerts: Concert[];
@@ -94,7 +95,7 @@ export function ConcertProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const availableConcerts = useMemo(
-    () => state.concerts.filter((concert) => new Date(concert.date) > new Date()),
+    () => state.concerts.filter((concert) => isFutureDate(concert.date)),
     [state.concerts]
   );
 
@@ -107,8 +108,31 @@ export function ConcertProvider({ children }: { children: ReactNode }) {
   );
 
   useEffect(() => {
-    loadConcerts();
-  }, [loadConcerts]);
+    let isMounted = true;
+
+    const fetchData = async () => {
+      try {
+        dispatch({ type: 'LOAD_CONCERTS_REQUEST' });
+        const concerts = await concertRepository.fetchAll();
+        if (isMounted) {
+          dispatch({ type: 'LOAD_CONCERTS_SUCCESS', payload: concerts });
+        }
+      } catch (error) {
+        if (isMounted) {
+          dispatch({
+            type: 'LOAD_CONCERTS_FAILURE',
+            payload: error instanceof Error ? error.message : 'Failed to load concerts',
+          });
+        }
+      }
+    };
+
+    fetchData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const value: ConcertContextValue = {
     concerts: state.concerts,
