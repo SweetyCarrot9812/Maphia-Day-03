@@ -14,6 +14,37 @@ interface CreateBookingData {
 
 export const bookingRepository = {
   async create(data: CreateBookingData): Promise<Booking> {
+    // 1단계: 좌석 중복 예약 검증 (경쟁 조건 방지)
+    const { data: existingSeats, error: seatCheckError } = await supabase
+      .from('seats')
+      .select('id, row, number, is_booked')
+      .in('id', data.seatIds);
+
+    if (seatCheckError) {
+      throw new Error(`좌석 조회 실패: ${seatCheckError.message}`);
+    }
+
+    // 이미 예약된 좌석이 있는지 확인
+    const alreadyBooked = existingSeats?.filter((seat) => seat.is_booked);
+    if (alreadyBooked && alreadyBooked.length > 0) {
+      const bookedSeatsInfo = alreadyBooked
+        .map((seat) => `${seat.row}행 ${seat.number}번`)
+        .join(', ');
+      throw new Error(`이미 예약된 좌석입니다: ${bookedSeatsInfo}`);
+    }
+
+    // 2단계: 좌석 먼저 잠금 (낙관적 잠금)
+    const { error: lockError } = await supabase
+      .from('seats')
+      .update({ is_booked: true })
+      .in('id', data.seatIds)
+      .eq('is_booked', false); // 아직 예약되지 않은 좌석만 업데이트
+
+    if (lockError) {
+      throw new Error(`좌석 잠금 실패: ${lockError.message}`);
+    }
+
+    // 3단계: 예약 생성
     const bookingNumber = `BK-${Date.now()}-${Math.floor(Math.random() * 10000)
       .toString()
       .padStart(4, '0')}`;
@@ -30,17 +61,17 @@ export const bookingRepository = {
       status: 'confirmed' as const,
     };
 
-    // 예약 생성
     const { data: booking, error: bookingError } = await supabase
       .from('bookings')
       .insert(bookingData)
       .select()
       .single();
 
-    if (bookingError) throw new Error(bookingError.message);
-
-    // 좌석 상태 업데이트
-    await seatRepository.updateBooked(data.seatIds, true);
+    if (bookingError) {
+      // 예약 생성 실패 시 좌석 잠금 롤백
+      await seatRepository.updateBooked(data.seatIds, false);
+      throw new Error(`예약 생성 실패: ${bookingError.message}`);
+    }
 
     return booking;
   },

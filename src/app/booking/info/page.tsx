@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useBooking } from '@/contexts/BookingContext';
 import { useSeat } from '@/contexts/SeatContext';
 import { useConcert } from '@/contexts/ConcertContext';
+import { useToast } from '@/contexts/ToastContext';
 import BookingForm from '@/components/booking/BookingForm';
 import SeatSummary from '@/components/seats/SeatSummary';
 import ErrorMessage from '@/components/common/ErrorMessage';
@@ -15,6 +16,7 @@ export default function BookingInfoPage() {
   const { selectedConcert } = useConcert();
   const { selectedSeats, totalAmount, clearSelectedSeats } = useSeat();
   const { createBooking, setBookingInfo, loading } = useBooking();
+  const { showSuccess, showError } = useToast();
   const [error, setError] = useState<string | null>(null);
 
   if (!selectedConcert) {
@@ -33,10 +35,13 @@ export default function BookingInfoPage() {
       const seatIds = selectedSeats.map((seat) => seat.id);
       await createBooking(selectedConcert.id, seatIds, totalAmount);
 
+      showSuccess('예약이 완료되었습니다!');
       clearSelectedSeats();
       router.push('/booking/confirmation');
     } catch (err) {
-      setError(err instanceof Error ? err.message : '예약에 실패했습니다');
+      const errorMessage = err instanceof Error ? err.message : '예약에 실패했습니다';
+      setError(errorMessage);
+      showError(errorMessage);
     }
   };
 
