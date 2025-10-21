@@ -204,6 +204,7 @@ export const useAuthStore = create<AuthState>()(
 
             if (error) throw error
 
+            // Clear state
             set({
               user: null,
               session: null,
@@ -211,8 +212,13 @@ export const useAuthStore = create<AuthState>()(
               subscription: null,
               isLoading: false,
             })
+
+            // Clear localStorage to remove persisted state
+            localStorage.removeItem('auth-storage')
           } catch (error: any) {
             set({ error: error.message, isLoading: false })
+            // Clear localStorage even on error
+            localStorage.removeItem('auth-storage')
             throw error
           }
         },
