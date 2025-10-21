@@ -19,8 +19,6 @@ export interface Subscription {
   plan_name: 'free' | 'basic' | 'premium' | 'enterprise'
   status: 'active' | 'expired' | 'cancelled'
   expires_at: string | null
-  max_projects: number
-  max_file_size_mb: number
 }
 
 export interface ProjectAccessResult {

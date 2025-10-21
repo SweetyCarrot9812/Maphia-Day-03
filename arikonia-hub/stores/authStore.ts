@@ -256,9 +256,7 @@ export const useAuthStore = create<AuthState>()(
                   subscription_plans (
                     id,
                     name,
-                    display_name,
-                    max_projects,
-                    max_file_size_mb
+                    display_name
                   )
                 )
               `)
@@ -279,8 +277,6 @@ export const useAuthStore = create<AuthState>()(
                   plan_name: subData.subscription_plans.name as 'free' | 'basic' | 'premium' | 'enterprise',
                   status: subData.status,
                   expires_at: subData.expires_at,
-                  max_projects: subData.subscription_plans.max_projects,
-                  max_file_size_mb: subData.subscription_plans.max_file_size_mb,
                 }
               : null
 
