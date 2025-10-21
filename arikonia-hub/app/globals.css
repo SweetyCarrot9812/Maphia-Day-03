@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: #fafafa;
+  --color-foreground: #171717;
+  --color-primary: #c4996c;
+  --color-secondary: #1e3a5f;
+  --color-accent: #7eaf7c;
+}
+
+.dark {
+  --color-background: #0f172a;
+  --color-foreground: #f1f5f9;
+}
+
+body {
+  color: var(--color-foreground);
+  background: var(--color-background);
+  font-family: -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
