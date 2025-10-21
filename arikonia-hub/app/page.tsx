@@ -33,12 +33,11 @@ export default function HomePage() {
   const handleSignOut = async () => {
     try {
       await signOut()
-      // Force page reload to clear all state
-      window.location.reload()
     } catch (error) {
       console.error('로그아웃 실패:', error)
-      // Force reload even on error to clear client state
-      window.location.reload()
+    } finally {
+      // Always reload page to clear all state
+      window.location.href = window.location.href
     }
   }
 
