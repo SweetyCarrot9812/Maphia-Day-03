@@ -31,7 +31,7 @@ export const PROJECTS = [
   {
     code: PROJECT_CODES.TEMFLOW,
     name: 'Tem-Flow',
-    description: '템플로우 - 건강 및 피트니스 관리',
+    description: '템플로우 - 데이터로 읽는 내 몸의 흐름',
     url: 'https://tem-flow.vercel.app',
     status: 'coming_soon',
   },
