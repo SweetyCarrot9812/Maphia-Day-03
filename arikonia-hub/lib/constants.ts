@@ -25,7 +25,7 @@ export const PROJECTS = [
     code: PROJECT_CODES.CARELIT,
     name: 'Care-Lit',
     description: '케어릿 - 간호사 국가고시 학습 플랫폼',
-    url: 'https://care-lit.vercel.app',
+    url: 'https://carelit.arikonia.com',
     status: 'active',
   },
   {

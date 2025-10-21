@@ -18,16 +18,22 @@ export function createClient() {
           if (options?.maxAge) {
             cookie += `; max-age=${options.maxAge}`
           }
-          if (options?.path) {
-            cookie += `; path=${options.path}`
+
+          // Always set path to root
+          cookie += `; path=${options?.path || '/'}`
+
+          // Set domain to .arikonia.com for SSO across subdomains
+          const domain = options?.domain || (typeof window !== 'undefined' && window.location.hostname.includes('arikonia.com')
+            ? '.arikonia.com'
+            : undefined)
+          if (domain) {
+            cookie += `; domain=${domain}`
           }
-          if (options?.domain) {
-            cookie += `; domain=${options.domain}`
-          }
+
           if (options?.sameSite) {
             cookie += `; samesite=${options.sameSite}`
           }
-          if (options?.secure) {
+          if (options?.secure !== false) {
             cookie += '; secure'
           }
 

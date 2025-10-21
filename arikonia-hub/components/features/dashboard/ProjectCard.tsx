@@ -38,16 +38,16 @@ export function ProjectCard({ project }: ProjectCardProps) {
       const result = await checkAccess(project.code)
 
       if (result.has_access) {
-        // Redirect to project with JWT token for SSO
-        const token = session?.access_token
-        const projectUrl = `${project.url}?token=${token}`
-
         toast.success('접속 중...', {
           description: `${project.name}로 이동합니다`,
         })
 
-        // Redirect to project
-        window.location.href = projectUrl
+        // Redirect to project SSO endpoint with JWT token
+        const token = session?.access_token
+        const ssoUrl = `${project.url}/sso?token=${token}`
+
+        // Use window.location for full page redirect to allow cookie sharing
+        window.location.href = ssoUrl
       } else {
         // Show error and required plan
         toast.error(result.error || '접근 권한이 없습니다', {
