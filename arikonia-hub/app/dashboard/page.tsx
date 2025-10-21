@@ -100,17 +100,9 @@ export default function DashboardPage() {
                   </p>
                 </div>
                 <div>
-                  <p className="text-slate-600 dark:text-slate-400">최대 프로젝트</p>
+                  <p className="text-slate-600 dark:text-slate-400">플랜</p>
                   <p className="font-semibold text-slate-900 dark:text-slate-100">
-                    {subscription?.max_projects || 'N/A'}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-slate-600 dark:text-slate-400">파일 크기 제한</p>
-                  <p className="font-semibold text-slate-900 dark:text-slate-100">
-                    {subscription?.max_file_size_mb
-                      ? `${subscription.max_file_size_mb}MB`
-                      : 'N/A'}
+                    {subscription?.plan_name || 'Free'}
                   </p>
                 </div>
               </div>
