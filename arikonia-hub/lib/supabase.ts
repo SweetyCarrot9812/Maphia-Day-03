@@ -40,7 +40,17 @@ export function createClient() {
           document.cookie = cookie
         },
         remove(name: string, options: any) {
+          // Remove from current domain
           document.cookie = `${name}=; path=${options?.path || '/'}; max-age=0`
+
+          // Also remove from .arikonia.com domain for SSO
+          const domain = typeof window !== 'undefined' && window.location.hostname.includes('arikonia.com')
+            ? '.arikonia.com'
+            : undefined
+
+          if (domain) {
+            document.cookie = `${name}=; path=${options?.path || '/'}; domain=${domain}; max-age=0`
+          }
         },
       },
     }

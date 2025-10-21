@@ -18,8 +18,15 @@ export default function DashboardPage() {
   }, [user, isLoading, router])
 
   const handleSignOut = async () => {
-    await signOut()
-    router.push('/login')
+    try {
+      await signOut()
+      // Force redirect to login
+      window.location.href = '/login'
+    } catch (error) {
+      console.error('Logout error:', error)
+      // Force redirect even on error
+      window.location.href = '/login'
+    }
   }
 
   if (isLoading) {
