@@ -31,11 +31,15 @@ export default function HomePage() {
   }
 
   const handleSignOut = async () => {
+    console.log('[Logout] Button clicked')
     try {
+      console.log('[Logout] Calling signOut...')
       await signOut()
+      console.log('[Logout] SignOut success')
     } catch (error) {
-      console.error('로그아웃 실패:', error)
+      console.error('[Logout] SignOut failed:', error)
     } finally {
+      console.log('[Logout] Redirecting to /')
       // Force redirect to root to clear all state
       window.location.href = '/'
     }
