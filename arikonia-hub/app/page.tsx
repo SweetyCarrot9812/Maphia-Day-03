@@ -336,7 +336,7 @@ export default function HomePage() {
               </p>
 
               {/* Access Button */}
-              {project.status === "운영 중" ? (
+              {project.status === "운영 중" || user?.email === "tkandpf18@naver.com" ? (
                 <button
                   onClick={() => handleProjectAccess(project.code, project.url, project.name)}
                   className="group/btn relative w-full overflow-hidden rounded-xl bg-gradient-to-r from-amber-600 via-amber-500 to-orange-500 px-4 py-3.5 text-sm font-bold text-white shadow-lg transition-all duration-300 hover:shadow-amber-500/50 hover:shadow-2xl hover:scale-105"
@@ -344,6 +344,9 @@ export default function HomePage() {
                   <div className="absolute inset-0 bg-gradient-to-r from-amber-700 to-orange-600 opacity-0 group-hover/btn:opacity-100 transition-opacity"></div>
                   <span className="relative flex items-center justify-center gap-2">
                     <span>프로젝트 접속</span>
+                    {user?.email === "tkandpf18@naver.com" && project.status === "준비 중" && (
+                      <span className="text-xs opacity-75">(관리자)</span>
+                    )}
                     <svg className="w-4 h-4 transform group-hover/btn:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7l5 5m0 0l-5 5m5-5H6" />
                     </svg>
