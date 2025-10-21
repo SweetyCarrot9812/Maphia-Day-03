@@ -36,8 +36,8 @@ export default function HomePage() {
     } catch (error) {
       console.error('로그아웃 실패:', error)
     } finally {
-      // Always reload page to clear all state
-      window.location.href = window.location.href
+      // Force redirect to root to clear all state
+      window.location.href = '/'
     }
   }
 
