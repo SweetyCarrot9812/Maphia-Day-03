@@ -117,7 +117,7 @@ export default function HomePage() {
       code: "temflow",
       name: "Tem-Flow",
       nameKo: "템플로우",
-      tagline: "내 몸을 성전처럼",
+      tagline: "데이터로 읽는 내 몸의 흐름",
       description: "헬스 및 운동 관리 플랫폼",
       color: "from-green-500 to-emerald-400",
       icon: "🏃",
