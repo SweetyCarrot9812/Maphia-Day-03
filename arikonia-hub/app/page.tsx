@@ -314,12 +314,12 @@ export default function HomePage() {
         <div className="rounded-3xl bg-gradient-to-r from-amber-100 to-slate-100 dark:from-amber-900/20 dark:to-slate-800/50 border border-amber-200 dark:border-amber-800/30 p-12 text-center">
           <h3 className="text-3xl font-bold text-slate-900 dark:text-slate-100">우리의 비전</h3>
           <p className="mx-auto mt-6 max-w-3xl text-lg text-slate-700 dark:text-slate-300 leading-relaxed">
-            <strong>Arikonia</strong>는 단순한 학습 플랫폼을 넘어,
+            <strong>Arikonia</strong>는 단순한 학습을 넘어,
             <br />
-            지식을 나누고 함께 성장하는 <span className="text-amber-700 dark:text-amber-400 font-semibold">아름다운 공동체</span>를 만들어갑니다.
+            지식과 경험을 공유하며 함께 성장하는 <span className="text-amber-700 dark:text-amber-400 font-semibold">열린 지식 공동체</span>를 만들어갑니다.
             <br />
             <br />
-            한국적 정서와 기독교적 가치, 그리고 글로벌한 전문성이 조화를 이루는
+            한국적 감성과 세계적 전문성이 어우러진
             <br />
             새로운 교육 생태계를 함께 경험하세요.
           </p>
