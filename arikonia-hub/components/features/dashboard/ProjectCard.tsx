@@ -14,6 +14,7 @@ interface ProjectCardProps {
     name: string
     description: string
     url: string
+    status?: 'active' | 'coming_soon'
   }
 }
 
@@ -23,6 +24,14 @@ export function ProjectCard({ project }: ProjectCardProps) {
   const session = useAuthStore((state) => state.session)
 
   const handleAccess = async () => {
+    // Check if project is coming soon
+    if (project.status === 'coming_soon') {
+      toast.info('출시 예정', {
+        description: `${project.name}은(는) 곧 만나보실 수 있습니다`,
+      })
+      return
+    }
+
     setLoading(true)
 
     try {
@@ -61,7 +70,15 @@ export function ProjectCard({ project }: ProjectCardProps) {
       <CardHeader>
         <CardTitle className="text-xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
           {project.name}
-          <ExternalLink className="h-4 w-4 text-slate-400" />
+          {project.status === 'active' ? (
+            <span className="ml-auto px-2 py-1 text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full">
+              운영중
+            </span>
+          ) : (
+            <span className="ml-auto px-2 py-1 text-xs font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded-full">
+              출시 예정
+            </span>
+          )}
         </CardTitle>
         <CardDescription className="dark:text-slate-400">
           {project.description}
@@ -70,17 +87,22 @@ export function ProjectCard({ project }: ProjectCardProps) {
       <CardContent>
         <Button
           onClick={handleAccess}
-          disabled={loading}
-          className="w-full bg-amber-600 hover:bg-amber-700 dark:bg-amber-500 dark:hover:bg-amber-600"
+          disabled={loading || project.status === 'coming_soon'}
+          className="w-full bg-amber-600 hover:bg-amber-700 dark:bg-amber-500 dark:hover:bg-amber-600 disabled:opacity-50"
         >
           {loading ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               확인 중...
             </>
-          ) : (
+          ) : project.status === 'coming_soon' ? (
             <>
               <Lock className="mr-2 h-4 w-4" />
+              출시 예정
+            </>
+          ) : (
+            <>
+              <ExternalLink className="mr-2 h-4 w-4" />
               접속하기
             </>
           )}

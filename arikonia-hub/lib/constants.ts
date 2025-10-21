@@ -24,20 +24,23 @@ export const PROJECTS = [
   {
     code: PROJECT_CODES.CARELIT,
     name: 'Care-Lit',
-    description: '간호사 국가고시 학습 플랫폼',
-    url: process.env.NEXT_PUBLIC_CARELIT_URL || 'https://care-lit.vercel.app',
+    description: '케어릿 - 간호사 국가고시 학습 플랫폼',
+    url: 'https://care-lit.vercel.app',
+    status: 'active',
   },
   {
     code: PROJECT_CODES.TEMFLOW,
     name: 'Tem-Flow',
-    description: '템플릿 워크플로우 관리',
-    url: process.env.NEXT_PUBLIC_TEMFLOW_URL || 'https://tem-flow.vercel.app',
+    description: '템플로우 - 건강 및 피트니스 관리',
+    url: 'https://tem-flow.vercel.app',
+    status: 'coming_soon',
   },
   {
     code: PROJECT_CODES.ARISPER,
     name: 'Arisper',
-    description: '아리스퍼 프로젝트',
-    url: process.env.NEXT_PUBLIC_ARISPER_URL || 'https://arisper.vercel.app',
+    description: '아리스퍼 - 언어 학습 플랫폼',
+    url: 'https://arisper.vercel.app',
+    status: 'coming_soon',
   },
 ] as const
 
