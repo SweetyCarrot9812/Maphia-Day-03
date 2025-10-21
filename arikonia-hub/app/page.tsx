@@ -113,7 +113,7 @@ export default function HomePage() {
       description: "의학 및 간호학 국가고시 학습 플랫폼",
       color: "from-blue-500 to-cyan-400",
       icon: "💡",
-      url: process.env.NEXT_PUBLIC_CARELIT_URL || "http://localhost:3001",
+      url: "https://carelit.arikonia.com",
       status: "운영 중"
     },
     {
