@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/tkand/Desktop/development/Hanoa/.claude/agents/**)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

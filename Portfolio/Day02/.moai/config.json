@@ -1,0 +1,20 @@
+{
+  "project": {
+    "name": "Day02",
+    "mode": "personal",
+    "locale": "en",
+    "language": "generic",
+    "language_detection": {
+      "detected_language": "generic",
+      "detection_method": "cli_default",
+      "confidence": null,
+      "markers": [],
+      "confirmed_by": null
+    },
+    "optimized": false
+  },
+  "language": {
+    "conversation_language": "en",
+    "conversation_language_name": "English"
+  }
+}
