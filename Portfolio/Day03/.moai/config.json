@@ -1,0 +1,40 @@
+{
+  "project": {
+    "name": "Conference Room Booking System",
+    "description": "A portfolio project featuring a modern conference room booking system with real-time availability, admin management, and comprehensive user experience",
+    "mode": "personal",
+    "locale": "en",
+    "language": "typescript",
+    "language_detection": {
+      "detected_language": "typescript",
+      "detection_method": "documentation_analysis",
+      "confidence": 0.95,
+      "markers": ["Next.js 14", "TypeScript", "React"],
+      "confirmed_by": "comprehensive_docs"
+    },
+    "optimized": true,
+    "version": "1.0.0",
+    "tech_stack": {
+      "frontend": "Next.js 14 with App Router",
+      "backend": "Supabase (PostgreSQL + Auth + Realtime)",
+      "deployment": "Vercel",
+      "language": "TypeScript",
+      "state_management": "Zustand + TanStack Query",
+      "architecture": "Simple Layered + DDD Lite"
+    },
+    "repository": {
+      "type": "portfolio",
+      "category": "full-stack-web-application"
+    }
+  },
+  "language": {
+    "conversation_language": "en",
+    "conversation_language_name": "English"
+  },
+  "development": {
+    "phase": "implementation_ready",
+    "last_updated": "2025-01-07",
+    "documentation_status": "comprehensive",
+    "spec_coverage": "complete"
+  }
+}
