@@ -10,6 +10,7 @@ A modern, responsive conference room booking system built with Next.js 14, TypeS
 - **Mobile Responsive**: Optimized for all device sizes
 - **Type-Safe**: Full TypeScript implementation with domain-driven design
 - **Real-time Updates**: Live updates using Supabase real-time features
+- **EARS Requirements Framework**: Event-Action-Response-State methodology for clear, testable requirements
 
 ## Tech Stack
 
@@ -77,14 +78,17 @@ src/
 ├── domain/                     # Domain Layer (DDD)
 │   ├── entities/              # Domain entities
 │   │   ├── ConferenceRoom.ts  # Conference room business logic
-│   │   └── Booking.ts         # Booking business logic
+│   │   ├── Booking.ts         # Booking business logic
+│   │   └── EarsTemplateProcessor.ts # EARS template processing
 │   ├── value-objects/         # Value objects
-│   │   └── PhoneNumber.ts     # Phone number validation
+│   │   ├── PhoneNumber.ts     # Phone number validation
+│   │   └── QualityMetrics.ts  # EARS quality scoring
 │   └── types/                 # Domain types
 │       └── common.ts          # Shared types
 │
 ├── application/               # Application Layer
 │   ├── use-cases/            # Use case implementations
+│   │   └── RequirementsGenerator.ts # EARS requirements generation
 │   └── services/             # Application services
 │
 ├── infrastructure/           # Infrastructure Layer
@@ -92,6 +96,8 @@ src/
 │   │   ├── supabase.ts      # Supabase client config
 │   │   ├── migrations/      # SQL migrations
 │   │   └── repositories/    # Repository implementations
+│   ├── ears/                # EARS framework integration
+│   │   └── EarsExporter.ts  # Export functionality
 │   └── lib/                 # External libraries
 │
 └── presentation/            # Presentation Layer
@@ -163,6 +169,51 @@ The project follows DDD principles:
 - **Application**: Use cases and application services
 - **Domain**: Business entities and rules
 - **Infrastructure**: Database, external services
+
+### EARS Requirements Methodology
+
+The project implements the **EARS (Event-Action-Response-State)** methodology for requirements specification:
+
+#### Core Components
+
+- **Event**: Trigger condition for the requirement
+- **Action**: System behavior or user action
+- **Response**: Expected system response
+- **State**: Optional system state context
+
+#### Example EARS Requirement
+
+```
+When [user selects room and time slot],
+and [clicks book button],
+then [system validates availability and creates booking],
+in [authenticated user state]
+```
+
+#### EARS Implementation
+
+- **Template Processor**: Parses and validates EARS format
+- **Requirements Generator**: Creates Given-When-Then acceptance criteria
+- **Quality Metrics**: Scoring system for requirement clarity
+- **Traceability**: Links requirements to tests and code via @TAG system
+
+#### Benefits
+
+- **Clarity**: Structured format reduces ambiguity
+- **Testability**: Direct mapping to test scenarios
+- **Traceability**: Complete requirement lifecycle tracking
+- **Validation**: Automated quality scoring and validation
+
+#### Usage in Booking System
+
+The EARS framework is applied to conference room booking requirements:
+
+- Room availability checking
+- Booking conflict detection
+- User authentication flows
+- Admin management operations
+
+See `.moai/specs/SPEC-EARS-001/` for detailed EARS specification and examples.
 
 ## Admin Features
 
