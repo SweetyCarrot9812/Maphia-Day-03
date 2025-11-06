@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/tkand/Desktop/development/Hanoa/**)",
+      "Bash(npm test:*)",
+      "Bash(npm install:*)",
+      "Bash(npx jest:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
