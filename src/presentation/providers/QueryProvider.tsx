@@ -5,6 +5,7 @@
  * Centralizes server state management for the application
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { useState } from 'react';
 
 export function QueryProvider({ children }: { children: React.ReactNode }) {
@@ -30,9 +31,6 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
           },
           mutations: {
             retry: 1,
-            onError: (error) => {
-              console.error('Mutation error:', error);
-            },
           },
         },
       })
@@ -42,9 +40,7 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
     <QueryClientProvider client={queryClient}>
       {children}
       {process.env.NODE_ENV === 'development' && (
-        <div>
-          {/* ReactQueryDevtools loaded only in development */}
-        </div>
+        <ReactQueryDevtools initialIsOpen={false} position="bottom-right" />
       )}
     </QueryClientProvider>
   );
