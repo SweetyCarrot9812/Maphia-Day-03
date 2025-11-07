@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Read(//c/Users/tkand/Desktop/development/**)",
+      "Bash(gh auth:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

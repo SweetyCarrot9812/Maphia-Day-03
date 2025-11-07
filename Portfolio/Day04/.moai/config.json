@@ -1,0 +1,33 @@
+{
+  "project": {
+    "name": "체험단 매칭 플랫폼",
+    "description": "체험단 매칭 플랫폼 - Portfolio demonstration of experience team matching platform",
+    "type": "portfolio",
+    "mode": "personal",
+    "locale": "ko",
+    "language": "typescript",
+    "language_detection": {
+      "detected_language": "typescript",
+      "detection_method": "doc_analysis",
+      "confidence": 0.95,
+      "markers": [
+        "React 18 + TypeScript frontend",
+        "Node.js + Express backend",
+        "TypeScript strict mode"
+      ],
+      "confirmed_by": "alfred"
+    },
+    "optimized": true,
+    "tech_stack": {
+      "frontend": "React 18 + TypeScript + Vite",
+      "backend": "Node.js + Express + TypeScript",
+      "database": "PostgreSQL 15",
+      "architecture": "Modular Monolith + DDD Lite"
+    },
+    "version": "v1.0"
+  },
+  "language": {
+    "conversation_language": "ko",
+    "conversation_language_name": "한국어"
+  }
+}
