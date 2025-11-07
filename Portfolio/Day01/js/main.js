@@ -45,6 +45,13 @@ class Game {
       this.view.hideGameOverScreen();
     });
 
+    // Resume Button (Pause Screen)
+    const resumeButton = document.getElementById('resumeButton');
+    resumeButton.addEventListener('click', () => {
+      this.model.setState('playing');
+      this.view.hidePauseScreen();
+    });
+
     // Performance Overlay Toggle (F key)
     window.addEventListener('keydown', (event) => {
       if (event.key === 'f' || event.key === 'F') {
@@ -89,6 +96,11 @@ class Game {
     if (this.model.state === 'playing') {
       // Update game state
       this.controller.update(deltaTime);
+
+      // Check if game over after update
+      if (this.model.state === 'gameover') {
+        this.controller.gameOver();
+      }
 
       // Render game state
       this.controller.render();

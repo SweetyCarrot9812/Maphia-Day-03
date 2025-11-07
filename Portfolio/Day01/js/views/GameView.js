@@ -1,4 +1,4 @@
-class GameView {
+export class GameView {
   constructor(canvas) {
     // @CODE:GAME-001:RENDER - Canvas rendering engine initialization
     this.canvas = canvas;
@@ -7,6 +7,7 @@ class GameView {
     this.performanceOverlay = {
       fps: 0,
       memoryUsage: 0,
+      visible: false,
     };
   }
 
@@ -29,14 +30,18 @@ class GameView {
 
   async drawPlayer(x, y) {
     // @CODE:GAME-001:RENDER - Player sprite rendering
-    const playerSprite = await this.loadSprite('luffy', 'assets/sprites/luffy.png');
-    this.ctx.drawImage(playerSprite, x, y);
+    const playerSprite = await this.loadSprite('luffy', 'luffy.png');
+    if (playerSprite && playerSprite.complete && playerSprite.naturalWidth > 0) {
+      this.ctx.drawImage(playerSprite, x, y);
+    }
   }
 
   async drawObstacle(x, y) {
     // @CODE:GAME-001:RENDER - Obstacle sprite rendering
-    const obstacleSprite = await this.loadSprite('akainu', 'assets/sprites/akainu.png');
-    this.ctx.drawImage(obstacleSprite, x, y);
+    const obstacleSprite = await this.loadSprite('akainu', 'akainu.png');
+    if (obstacleSprite && obstacleSprite.complete && obstacleSprite.naturalWidth > 0) {
+      this.ctx.drawImage(obstacleSprite, x, y);
+    }
   }
 
   resizeCanvas(width, height) {
@@ -53,6 +58,8 @@ class GameView {
 
   renderPerformanceOverlay() {
     // @CODE:GAME-001:RENDER - Performance metrics rendering
+    if (!this.performanceOverlay.visible) return;
+
     this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
     this.ctx.fillRect(10, 10, 150, 80);
     this.ctx.fillStyle = 'white';
@@ -64,5 +71,56 @@ class GameView {
   clearCanvas() {
     // @CODE:GAME-001:RENDER - Clear canvas for next frame
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+  }
+
+  // @CODE:GAME-001:RENDER - Screen management methods
+  showStartScreen() {
+    const startScreen = document.getElementById('startScreen');
+    const pauseButton = document.getElementById('pauseButton');
+    if (startScreen) startScreen.style.display = 'flex';
+    if (pauseButton) pauseButton.style.display = 'none';
+  }
+
+  hideStartScreen() {
+    const startScreen = document.getElementById('startScreen');
+    const pauseButton = document.getElementById('pauseButton');
+    if (startScreen) startScreen.style.display = 'none';
+    if (pauseButton) pauseButton.style.display = 'block';
+  }
+
+  showPauseScreen() {
+    const pauseScreen = document.getElementById('pauseScreen');
+    const pauseButton = document.getElementById('pauseButton');
+    if (pauseScreen) pauseScreen.style.display = 'flex';
+    if (pauseButton) pauseButton.style.display = 'none';
+  }
+
+  hidePauseScreen() {
+    const pauseScreen = document.getElementById('pauseScreen');
+    const pauseButton = document.getElementById('pauseButton');
+    if (pauseScreen) pauseScreen.style.display = 'none';
+    if (pauseButton) pauseButton.style.display = 'block';
+  }
+
+  showGameOverScreen(score = 0) {
+    const gameOverScreen = document.getElementById('gameOverScreen');
+    const pauseButton = document.getElementById('pauseButton');
+    const finalScore = document.getElementById('finalScore');
+    if (finalScore) {
+      finalScore.textContent = `점수: ${Math.floor(score)}`;
+    }
+    if (gameOverScreen) gameOverScreen.style.display = 'flex';
+    if (pauseButton) pauseButton.style.display = 'none';
+  }
+
+  hideGameOverScreen() {
+    const gameOverScreen = document.getElementById('gameOverScreen');
+    const pauseButton = document.getElementById('pauseButton');
+    if (gameOverScreen) gameOverScreen.style.display = 'none';
+    if (pauseButton) pauseButton.style.display = 'block';
+  }
+
+  togglePerformanceOverlay() {
+    this.performanceOverlay.visible = !this.performanceOverlay.visible;
   }
 }
